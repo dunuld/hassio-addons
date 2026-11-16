@@ -1,13 +1,21 @@
 import { applyHaTheme, clearHaTheme, getHaDocument, isDarkColor } from './ha-theme';
 
+/** Im Test erzeugte iframes, werden nach jedem Test entfernt. */
+const frames: HTMLIFrameElement[] = [];
+
 /** Baut ein Fake-HA-Dokument, dessen <html> die angegebenen CSS-Variablen trägt. */
 function createHaDocument(vars: Record<string, string>): Document {
-  const doc = document.implementation.createHTMLDocument('ha');
+  // Ein echtes iframe-Dokument hat ein eigenes defaultView, dessen
+  // getComputedStyle() die Styles dieses Dokuments berechnet (wie im echten
+  // HA-Frontend). jsdom ≥ 31 berechnet keine Styles mehr für Elemente aus
+  // fremden Dokumenten, daher reicht ein umgebogenes defaultView nicht mehr.
+  const frame = document.createElement('iframe');
+  document.body.appendChild(frame);
+  frames.push(frame);
+  const doc = frame.contentDocument!;
   for (const [name, value] of Object.entries(vars)) {
     doc.documentElement.style.setProperty(name, value);
   }
-  // jsdom liefert für createHTMLDocument kein defaultView → das eigene Fenster nutzen
-  Object.defineProperty(doc, 'defaultView', { value: window });
   return doc;
 }
 
@@ -16,6 +24,10 @@ describe('ha-theme', () => {
 
   beforeEach(() => {
     target = document.createElement('div');
+  });
+
+  afterEach(() => {
+    for (const frame of frames.splice(0)) frame.remove();
   });
 
   it('is not embedded when running top-level', () => {
