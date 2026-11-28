@@ -333,6 +333,13 @@ input:not([type]) {
   color: var(--app-text-secondary);
 }
 
+.inline-form label.checkbox {
+  flex-direction: row;
+  align-items: center;
+  gap: 0.35rem;
+  padding-bottom: 0.4rem;
+}
+
 .form-error {
   color: var(--app-error-text);
   font-size: 0.85rem;

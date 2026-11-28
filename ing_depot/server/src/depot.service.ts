@@ -12,6 +12,7 @@ import type {
   Overview,
   PriceInput,
   PriceSource,
+  SecurityUpdate,
   Transaction,
   TransactionType,
 } from '../../shared/api-types.js';
@@ -43,6 +44,8 @@ const ISIN_RE = /^[A-Z]{2}[A-Z0-9]{9}\d$/;
 const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const ENTITY_RE = /^[a-z_]+\.[a-z0-9_]+$/;
 const DEPOT_NUMBER_RE = /^\d{4,20}$/;
+/** Yahoo-Kürzel, z. B. `VGWL.DE`, `MSFT`, `^GDAXI` */
+const SYMBOL_RE = /^[A-Za-z0-9^][A-Za-z0-9.\-=^]{0,19}$/;
 
 /** Anzeigename eines Depots: eigene Bezeichnung, sonst die Depotnummer. */
 export function depotDisplayName(number: string, label: string | null): string {
@@ -553,14 +556,89 @@ export class DepotService {
     this.changed();
   }
 
-  setPriceEntity(isin: string, entity: string | null | undefined): void {
+  setPriceEntity(isin: string, entity: string | null | undefined, notify = true): void {
     this.requireSecurity(isin);
     const value = entity?.trim() || null;
     if (value && !ENTITY_RE.test(value)) {
       throw badRequest('Ungültige Entität (erwartet z. B. sensor.msci_world).', 'INVALID_ENTITY');
     }
     this.db.prepare('UPDATE securities SET price_entity = ? WHERE isin = ?').run(value, isin);
+    if (notify) this.changed();
+  }
+
+  /**
+   * Ändert die Kurs-Einstellungen eines Wertpapiers. Nur übergebene Felder werden geändert;
+   * ein neues Yahoo-Kürzel verwirft das automatisch ermittelte.
+   */
+  updateSecurity(isin: string, update: Partial<SecurityUpdate>): void {
+    this.requireSecurity(isin);
+    let symbol: string | null | undefined;
+    if (update.priceSymbol !== undefined) {
+      symbol = update.priceSymbol === null ? null : String(update.priceSymbol).trim() || null;
+      if (symbol && !SYMBOL_RE.test(symbol)) {
+        throw badRequest('Ungültiges Kürzel (erwartet z. B. VGWL.DE).', 'INVALID_SYMBOL');
+      }
+    }
+    if (update.onlinePrices !== undefined && typeof update.onlinePrices !== 'boolean') {
+      throw badRequest('onlinePrices muss true oder false sein.', 'INVALID_ONLINE');
+    }
+    transaction(this.db, () => {
+      if (update.priceEntity !== undefined) this.setPriceEntity(isin, update.priceEntity, false);
+      if (update.onlinePrices !== undefined) {
+        this.db
+          .prepare('UPDATE securities SET online_prices = ? WHERE isin = ?')
+          .run(update.onlinePrices ? 1 : 0, isin);
+      }
+      if (symbol !== undefined) {
+        this.db
+          .prepare('UPDATE securities SET price_symbol = ?, resolved_symbol = NULL WHERE isin = ?')
+          .run(symbol, isin);
+      }
+    });
     this.changed();
+  }
+
+  /** Wertpapiere mit Online-Abruf samt festgelegtem bzw. ermitteltem Yahoo-Kürzel. */
+  onlineSecurities(): {
+    isin: string;
+    name: string;
+    symbol: string | null;
+    resolved: string | null;
+  }[] {
+    return this.db
+      .prepare(
+        'SELECT isin, name, price_symbol, resolved_symbol FROM securities WHERE online_prices = 1',
+      )
+      .all()
+      .map((row) => ({
+        isin: String(row['isin']),
+        name: String(row['name']),
+        symbol: (row['price_symbol'] as string | null) ?? null,
+        resolved: (row['resolved_symbol'] as string | null) ?? null,
+      }));
+  }
+
+  setResolvedSymbol(isin: string, symbol: string | null): void {
+    this.db.prepare('UPDATE securities SET resolved_symbol = ? WHERE isin = ?').run(symbol, isin);
+  }
+
+  /**
+   * Speichert einen Online-Kurs, ohne Zuhörer zu benachrichtigen – der Abruf meldet
+   * die Änderung gesammelt über `notifyChanged()`.
+   */
+  storeOnlinePrice(isin: string, date: string, price: number): void {
+    this.upsertPrice(isin, date, price, 'yahoo');
+  }
+
+  notifyChanged(): void {
+    this.changed();
+  }
+
+  /** Gibt es einen Kurs (beliebiger Quelle) im Zeitraum `from` bis `to`? */
+  hasPriceBetween(isin: string, from: string, to: string): boolean {
+    return !!this.db
+      .prepare('SELECT 1 FROM prices WHERE isin = ? AND date BETWEEN ? AND ?')
+      .get(isin, from, to);
   }
 
   /** Wertpapiere, deren Kurs aus einer HA-Entität gelesen wird. */
@@ -581,12 +659,17 @@ export class DepotService {
     const today = this.today();
     const selectedYear = year ?? Number(today.slice(0, 4));
     const securities: SecurityRow[] = this.db
-      .prepare('SELECT isin, name, price_entity FROM securities')
+      .prepare(
+        'SELECT isin, name, price_entity, online_prices, price_symbol, resolved_symbol FROM securities',
+      )
       .all()
       .map((row) => ({
         isin: String(row['isin']),
         name: String(row['name']),
         priceEntity: (row['price_entity'] as string | null) ?? null,
+        onlinePrices: Number(row['online_prices']) === 1,
+        priceSymbol: (row['price_symbol'] as string | null) ?? null,
+        resolvedSymbol: (row['resolved_symbol'] as string | null) ?? null,
       }));
     const prices: PriceRow[] = this.db
       .prepare('SELECT isin, date, price, source FROM prices')

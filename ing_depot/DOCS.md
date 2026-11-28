@@ -21,11 +21,13 @@ Beträge, realisierte Gewinne, ausgezahlte Dividenden und Kursgewinne.
 
 ## Konfiguration
 
-| Option            | Standard           | Bedeutung                                                                                     |
-| ----------------- | ------------------ | --------------------------------------------------------------------------------------------- |
-| `inbox_folder`    | `/share/ing_depot` | Eingangsordner, aus dem PDFs automatisch importiert werden. Leer lassen, um ihn abzuschalten. |
-| `publish_sensors` | `true`             | Kennzahlen des laufenden Jahres als Sensoren an Home Assistant melden.                        |
-| `exemption_order` | `0`                | Freistellungsauftrag in Euro (z. B. `1000`). Bei `0` wird die Nutzung nicht angezeigt.        |
+| Option            | Standard           | Bedeutung                                                                                                                                                                     |
+| ----------------- | ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `inbox_folder`    | `/share/ing_depot` | Eingangsordner, aus dem PDFs automatisch importiert werden. Leer lassen, um ihn abzuschalten.                                                                                 |
+| `publish_sensors` | `true`             | Kennzahlen des laufenden Jahres als Sensoren an Home Assistant melden.                                                                                                        |
+| `exemption_order` | `0`                | Freistellungsauftrag in Euro (z. B. `1000`). Bei `0` wird die Nutzung nicht angezeigt.                                                                                        |
+| `price_update`    | `daily`            | Online-Kurse von Yahoo Finance: `daily` = einmal täglich nach Börsenschluss (22:30 Uhr), `intraday` = zusätzlich laufend während der Handelszeit, `off` = nur auf Knopfdruck. |
+| `price_interval`  | `15`               | Abstand der Abrufe in Minuten bei `intraday` (5–120).                                                                                                                         |
 
 Der Zugriff erfolgt ausschließlich über Home Assistant Ingress; es werden keine Ports nach außen
 geöffnet.
@@ -93,8 +95,8 @@ Startpunkt in diesem Jahr).
 - **Dividenden ausgezahlt**: Gutschriften nach Steuern; zusätzlich der Bruttobetrag.
 - **Kursgewinn seit Kauf**: aktueller Wert minus Einstandswert des Bestands.
 - **Kursgewinn seit 01.01.**: aktueller Wert plus Verkaufserlöse, minus Wert am 31.12. des
-  Vorjahres und minus Käufe des Jahres. Den Kurs zum 31.12. liefert der Jahresdepotauszug; fehlt
-  er, wird ersatzweise mit dem Einstandswert gerechnet. Verkäufe von Stücken ohne bekannten Kauf
+  Vorjahres und minus Käufe des Jahres. Den Kurs zum 31.12. liefert der Jahresdepotauszug oder der
+  Online-Abruf; fehlt beides, wird ersatzweise mit dem Einstandswert gerechnet. Verkäufe von Stücken ohne bekannten Kauf
   zählen hier nicht mit.
 - **Freistellungsauftrag**: rechnerische Nutzung aus Bruttoerträgen plus realisierten Gewinnen –
   eine Näherung, maßgeblich ist die Abrechnung der Bank.
@@ -103,11 +105,39 @@ Startpunkt in diesem Jahr).
 
 Der aktuelle Kurs einer Position stammt aus der jeweils jüngsten Quelle:
 
-1. **Dokumente**: Kurs der letzten Abrechnung bzw. des letzten Depotauszugs. Ohne weitere Quelle
-   ist der Kurs so alt wie dein letztes Dokument.
-2. **Manuell**: In der Positionsliste auf **Kurs** klicken und den aktuellen Kurs eintragen.
-3. **Home-Assistant-Entität**: Dort eine Entität hinterlegen (z. B. `sensor.msci_world`), deren
-   Zustand der Kurs in Euro ist. Das Add-on liest sie alle 15 Minuten.
+1. **Dokumente**: Kurs der letzten Abrechnung bzw. des letzten Depotauszugs.
+2. **Online (Yahoo Finance)**: siehe unten.
+3. **Home-Assistant-Entität**: In der Positionsliste auf **Kurs** klicken und eine Entität
+   hinterlegen (z. B. `sensor.msci_world`), deren Zustand der Kurs in Euro ist. Das Add-on liest sie
+   alle 15 Minuten.
+4. **Manuell**: In der Positionsliste auf **Kurs** klicken und den aktuellen Kurs eintragen.
+
+Liegen für einen Tag mehrere Kurse vor, gilt die Reihenfolge der Liste – ein manueller Kurs
+schlägt alle anderen desselben Tages.
+
+### Online-Kurse
+
+Das Add-on ruft die Kurse aller gehaltenen Wertpapiere bei **Yahoo Finance** ab – je nach
+Einstellung `price_update` einmal täglich nach Börsenschluss oder laufend während der Handelszeit
+(Börsentage 08:00–22:30 Uhr). Über **Kurse jetzt aktualisieren** in der Übersicht lässt sich der
+Abruf jederzeit anstoßen, auch mit `price_update: off`. Die Statuszeile zeigt den letzten Abruf und
+eventuelle Probleme.
+
+- **Kürzel:** Das Yahoo-Kürzel wird beim ersten Abruf über die ISIN gesucht; Börsenplätze in Euro
+  (Xetra zuerst) werden bevorzugt. Findet Yahoo nur eine Notierung in einer anderen Währung (z. B.
+  bei irischen ETFs oder US-Aktien), wird der Kurs mit dem aktuellen Devisenkurs in EUR umgerechnet
+  und auf Cent gerundet. Er kann dadurch leicht vom Xetra-Kurs abweichen.
+- **Eigenes Kürzel:** Unter **Kurs** in der Positionsliste kannst du ein Kürzel fest eintragen, z. B.
+  `VGWL.DE` für den Vanguard FTSE All-World an Xetra. Das Kürzel findest du auf
+  [finance.yahoo.com](https://finance.yahoo.com) über die Suche nach dem Wertpapier.
+- **Abschalten:** Dort lässt sich der Online-Abruf je Wertpapier auch abschalten.
+- **Kurs zum 31.12.:** Fehlt für ein zum Jahresende gehaltenes Wertpapier ein Kurs aus den letzten
+  Tagen des Jahres (etwa weil der Jahresdepotauszug fehlt), holt das Add-on den Schlusskurs nach.
+  Damit stimmt der „Kursgewinn seit 01.01.“ auch ohne Auszug.
+
+Yahoo Finance ist eine inoffizielle, frei zugängliche Schnittstelle ohne Zugangsschlüssel. Sie kann
+sich ohne Ankündigung ändern oder Anfragen zeitweise ablehnen; dann behält das Add-on die zuletzt
+bekannten Kurse. Übertragen werden dabei nur ISINs bzw. Kürzel, keine Depotdaten.
 
 ### Sensoren
 
@@ -145,7 +175,8 @@ Home Assistant erscheinen sie erst mit der nächsten Aktualisierung wieder.
 
 Datenbank (`depot.db`) und Original-PDFs (`documents/`) liegen im persistenten Add-on-Verzeichnis
 `/data`, das bei Updates erhalten bleibt und in Home-Assistant-Backups des Add-ons enthalten ist.
-Es werden keine Daten an Dritte übertragen.
+Depotdaten werden nicht an Dritte übertragen; der Online-Kursabruf fragt bei Yahoo Finance nur
+ISINs bzw. Kürzel der gehaltenen Wertpapiere ab.
 
 ## Support
 

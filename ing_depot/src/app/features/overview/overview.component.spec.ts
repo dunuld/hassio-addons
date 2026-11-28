@@ -2,7 +2,7 @@ import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
-import type { Overview, Position } from '../../../../shared/api-types';
+import type { Overview, Position, PriceUpdateStatus } from '../../../../shared/api-types';
 import { depotFixture, flushDepots } from '../../testing';
 import OverviewComponent from './overview.component';
 
@@ -15,6 +15,9 @@ const position: Position = {
   priceDate: '2026-06-30',
   priceSource: 'manual',
   priceEntity: null,
+  onlinePrices: true,
+  priceSymbol: null,
+  resolvedSymbol: 'IWDA.L',
   valueCents: 40000,
   gainCents: 9750,
   gainPct: 32.23,
@@ -79,10 +82,26 @@ describe('OverviewComponent', () => {
     localStorage.clear();
   });
 
-  function render(data: Overview | null = overview()) {
+  const priceStatus = (patch: Partial<PriceUpdateStatus> = {}): PriceUpdateStatus => ({
+    mode: 'daily',
+    intervalMinutes: 15,
+    running: false,
+    lastRunAt: '2026-11-27T21:30:00.000Z',
+    lastUpdated: 3,
+    lastErrors: [],
+    ...patch,
+  });
+
+  function render(
+    data: Overview | null = overview(),
+    status: PriceUpdateStatus | null = priceStatus(),
+  ) {
     const fixture = TestBed.createComponent(OverviewComponent);
     fixture.detectChanges();
     flushDepots(http);
+    const statusReq = http.expectOne('api/prices/status');
+    if (status) statusReq.flush(status);
+    else statusReq.flush(null, { status: 500, statusText: 'Server Error' });
     if (data) {
       http.expectOne('api/overview').flush(data);
       fixture.detectChanges();
@@ -229,6 +248,7 @@ describe('OverviewComponent', () => {
         displayName: 'Gemeinschaft',
       }),
     ]);
+    http.expectOne('api/prices/status').flush(priceStatus());
     http.expectOne('api/overview').flush(overview());
     fixture.detectChanges();
     const el = fixture.nativeElement as HTMLElement;
@@ -250,5 +270,84 @@ describe('OverviewComponent', () => {
     fixture.detectChanges();
     http.expectOne('api/overview?year=2026').flush(overview());
     expect(localStorage.getItem('ing-depot-selected')).toBeNull();
+  });
+
+  it('zeigt den Stand der Online-Kurse samt Hinweisen', () => {
+    const { el, text } = render(
+      overview(),
+      priceStatus({ lastErrors: ['Microsoft: Kein Kürzel', 'World: Status 429'] }),
+    );
+    expect(text()).toContain(sq('Online-Kurse (Yahoo Finance): täglich nach Börsenschluss'));
+    expect(text()).toContain(sq('(3 Kurse)'));
+    expect(text()).toMatch(/zuletzt27\.11\.2026,\d{2}:\d{2}Uhr/); // Ortszeit des Browsers;
+    expect(el.querySelector('.price-errors summary')?.textContent).toContain(
+      '2 Hinweise zum letzten Abruf',
+    );
+    expect(el.querySelectorAll('.price-errors li')).toHaveLength(2);
+  });
+
+  it('beschreibt die Zeitpläne und blendet die Statuszeile bei Fehlern aus', () => {
+    const { component } = render(overview(), null);
+    expect(component.priceStatus()).toBeNull();
+    expect(component.scheduleLabel(priceStatus({ mode: 'intraday', intervalMinutes: 30 }))).toBe(
+      'alle 30 Minuten während der Handelszeit',
+    );
+    expect(component.scheduleLabel(priceStatus({ mode: 'off' }))).toBe('nur auf Abruf');
+    expect(component.lastRunLabel(priceStatus({ lastRunAt: null }))).toBe('noch nicht abgerufen');
+  });
+
+  it('zeigt einen Hinweis und eine einzelne Meldung korrekt an', () => {
+    const { el, text } = render(
+      overview(),
+      priceStatus({ lastRunAt: null, lastUpdated: 1, lastErrors: ['Nur einer'] }),
+    );
+    expect(text()).toContain(sq('noch nicht abgerufen'));
+    expect(text()).not.toContain(sq('(1 Kurs)'));
+    expect(el.querySelector('.price-errors summary')?.textContent).toContain('1 Hinweis zum');
+  });
+
+  it('aktualisiert die Kurse auf Knopfdruck und lädt die Übersicht neu', () => {
+    const { el, fixture, text } = render(overview(), priceStatus({ lastUpdated: 1 }));
+    expect(text()).toContain(sq('(1 Kurs)'));
+    const button = el.querySelector<HTMLButtonElement>('.price-status button')!;
+    button.click();
+    fixture.detectChanges();
+    expect(button.disabled).toBe(true);
+    expect(button.textContent).toContain('Rufe ab');
+    http.expectOne('api/prices/refresh').flush(priceStatus({ lastUpdated: 5 }));
+    http.expectOne('api/overview?year=2026').flush(overview());
+    expect(text()).toContain(sq('(5 Kurse)'));
+    expect(button.disabled).toBe(false);
+
+    button.click();
+    http
+      .expectOne('api/prices/refresh')
+      .flush({ error: 'Kaputt' }, { status: 500, statusText: 'Server Error' });
+    expect(text()).toContain('Kaputt');
+  });
+
+  it('speichert Online-Abruf und Yahoo-Kürzel einer Position', () => {
+    const { el, component, fixture } = render();
+    component.edit(position);
+    fixture.detectChanges();
+    const symbol = el.querySelector<HTMLInputElement>('input[name=symbol]')!;
+    expect(symbol.placeholder).toBe('IWDA.L');
+
+    component.symbolInput = ' EUNL.DE ';
+    component.onlineInput = false;
+    component.save(position);
+    const put = http.expectOne('api/securities/IE00B4L5Y983');
+    expect(put.request.body).toEqual({ priceSymbol: 'EUNL.DE', onlinePrices: false });
+    put.flush(null);
+    http.expectOne('api/overview?year=2026').flush(overview());
+
+    // Unverändert: keine Anfrage an die Wertpapier-Einstellungen
+    component.edit({ ...position, priceSymbol: 'EUNL.DE', resolvedSymbol: null });
+    expect(component.symbolInput).toBe('EUNL.DE');
+    component.save({ ...position, priceSymbol: 'EUNL.DE' });
+    http.expectNone('api/securities/IE00B4L5Y983');
+    http.expectOne('api/overview?year=2026').flush(overview());
+    fixture.detectChanges();
+    expect(el.querySelector('.edit-row')).toBeNull();
   });
 });

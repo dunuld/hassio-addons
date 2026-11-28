@@ -6,7 +6,7 @@ import { DatabaseSync } from 'node:sqlite';
 export type Database = DatabaseSync;
 export type Row = Record<string, unknown>;
 
-export const SCHEMA_VERSION = 2;
+export const SCHEMA_VERSION = 3;
 
 const schemaSql = (): string => readFileSync(new URL('./schema.sql', import.meta.url), 'utf8');
 
@@ -36,6 +36,29 @@ const MIGRATION_2 = `
   CREATE INDEX transactions_depot ON transactions (depot_id);
 `;
 
+/**
+ * v3: Online-Kurse. Die Kursquelle wird nicht mehr per CHECK eingeschränkt (neue Quellen ohne
+ * Tabellenumbau), Wertpapiere erhalten Einstellungen für den Online-Abruf.
+ */
+const MIGRATION_3 = `
+  CREATE TABLE prices_v3 (
+    isin        TEXT NOT NULL REFERENCES securities (isin),
+    date        TEXT NOT NULL,
+    price       REAL NOT NULL,
+    source      TEXT NOT NULL,
+    document_id INTEGER REFERENCES documents (id) ON DELETE CASCADE,
+    PRIMARY KEY (isin, date, source)
+  );
+  INSERT INTO prices_v3 (isin, date, price, source, document_id)
+    SELECT isin, date, price, source, document_id FROM prices;
+  DROP TABLE prices;
+  ALTER TABLE prices_v3 RENAME TO prices;
+  ALTER TABLE securities ADD COLUMN online_prices INTEGER NOT NULL DEFAULT 1;
+  -- Vom Nutzer festgelegtes bzw. automatisch ermitteltes Yahoo-Kürzel
+  ALTER TABLE securities ADD COLUMN price_symbol TEXT;
+  ALTER TABLE securities ADD COLUMN resolved_symbol TEXT;
+`;
+
 /** Öffnet (oder erstellt) die Datenbank und wendet das Schema an. `:memory:` für Tests. */
 export function openDatabase(file: string): Database {
   if (file !== ':memory:') mkdirSync(dirname(file), { recursive: true });
@@ -63,7 +86,8 @@ function migrate(db: Database): void {
   transaction(db, () => {
     if (version < 1) db.exec(schemaSql());
     if (version < 2) db.exec(MIGRATION_2);
-    // Künftige Migrationen: if (version < 3) { ... }
+    if (version < 3) db.exec(MIGRATION_3);
+    // Künftige Migrationen: if (version < 4) { ... }
     db.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`);
   });
 }

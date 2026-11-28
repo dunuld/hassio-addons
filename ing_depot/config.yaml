@@ -28,7 +28,11 @@ options:
   inbox_folder: /share/ing_depot
   publish_sensors: true
   exemption_order: 0
+  price_update: daily
+  price_interval: 15
 schema:
   inbox_folder: str?
   publish_sensors: bool
   exemption_order: float(0,)
+  price_update: list(off|daily|intraday)
+  price_interval: int(5,120)

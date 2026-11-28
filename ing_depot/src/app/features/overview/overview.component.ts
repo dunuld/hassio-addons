@@ -1,7 +1,12 @@
 import { Component, computed, effect, inject, signal, untracked } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
-import type { Overview, Position } from '../../../../shared/api-types';
+import type {
+  Overview,
+  Position,
+  PriceUpdateStatus,
+  SecurityUpdate,
+} from '../../../../shared/api-types';
 import { apiErrorMessage } from '../../core/api-error';
 import { ApiService } from '../../core/api.service';
 import { DepotSelectionService } from '../../core/depot-selection.service';
@@ -18,7 +23,14 @@ import {
   signClass,
 } from '../../core/format';
 
-const SOURCE_LABEL = { document: 'aus Dokument', manual: 'manuell', ha: 'Home Assistant' } as const;
+const SOURCE_LABEL = {
+  document: 'aus Dokument',
+  manual: 'manuell',
+  ha: 'Home Assistant',
+  yahoo: 'Yahoo Finance',
+} as const;
+
+const TIME = new Intl.DateTimeFormat('de-DE', { dateStyle: 'medium', timeStyle: 'short' });
 
 /** Jahresübersicht: Kennzahlen, Monatsverlauf und Positionen. */
 @Component({
@@ -36,8 +48,12 @@ export default class OverviewComponent {
   /** ISIN der Position, deren Kurs gerade bearbeitet wird */
   readonly editing = signal<string | null>(null);
   readonly editError = signal<string | null>(null);
+  readonly priceStatus = signal<PriceUpdateStatus | null>(null);
+  readonly refreshing = signal(false);
   priceInput = '';
   entityInput = '';
+  symbolInput = '';
+  onlineInput = true;
 
   readonly months = MONTHS;
   readonly euro = formatEuro;
@@ -75,10 +91,49 @@ export default class OverviewComponent {
   });
 
   constructor() {
+    this.loadPriceStatus();
     // Laden – und neu laden, sobald ein anderes Depot gewählt wird
     effect(() => {
       this.selection.selected();
       untracked(() => this.load(this.overview()?.year));
+    });
+  }
+
+  loadPriceStatus(): void {
+    this.api.priceStatus().subscribe({
+      next: (status) => this.priceStatus.set(status),
+      // Ohne Status fehlt nur die Statuszeile – kein Grund für eine Fehlermeldung
+      error: () => this.priceStatus.set(null),
+    });
+  }
+
+  /** Beschreibung des Zeitplans für die Statuszeile */
+  scheduleLabel(status: PriceUpdateStatus): string {
+    if (status.mode === 'daily') return 'täglich nach Börsenschluss';
+    if (status.mode === 'intraday') {
+      return `alle ${status.intervalMinutes} Minuten während der Handelszeit`;
+    }
+    return 'nur auf Abruf';
+  }
+
+  lastRunLabel(status: PriceUpdateStatus): string {
+    return status.lastRunAt
+      ? `zuletzt ${TIME.format(new Date(status.lastRunAt))} Uhr`
+      : 'noch nicht abgerufen';
+  }
+
+  refreshPrices(): void {
+    this.refreshing.set(true);
+    this.api.refreshPrices().subscribe({
+      next: (status) => {
+        this.refreshing.set(false);
+        this.priceStatus.set(status);
+        this.load(this.overview()?.year);
+      },
+      error: (err: unknown) => {
+        this.refreshing.set(false);
+        this.error.set(apiErrorMessage(err, 'Die Kurse konnten nicht abgerufen werden'));
+      },
     });
   }
 
@@ -110,6 +165,8 @@ export default class OverviewComponent {
     this.editError.set(null);
     this.priceInput = '';
     this.entityInput = position.priceEntity ?? '';
+    this.symbolInput = position.priceSymbol ?? '';
+    this.onlineInput = position.onlinePrices;
   }
 
   cancelEdit(): void {
@@ -123,6 +180,11 @@ export default class OverviewComponent {
       return;
     }
     const entity = this.entityInput.trim() || null;
+    const symbol = this.symbolInput.trim() || null;
+    const update: SecurityUpdate = {};
+    if (entity !== position.priceEntity) update.priceEntity = entity;
+    if (symbol !== position.priceSymbol) update.priceSymbol = symbol;
+    if (this.onlineInput !== position.onlinePrices) update.onlinePrices = this.onlineInput;
     const fail = (err: unknown) =>
       this.editError.set(apiErrorMessage(err, 'Speichern fehlgeschlagen'));
     const done = () => {
@@ -133,10 +195,8 @@ export default class OverviewComponent {
       if (price === null) return done();
       this.api.addPrice(position.isin, { price }).subscribe({ next: done, error: fail });
     };
-    if (entity !== position.priceEntity) {
-      this.api
-        .updateSecurity(position.isin, { priceEntity: entity })
-        .subscribe({ next: savePrice, error: fail });
+    if (Object.keys(update).length > 0) {
+      this.api.updateSecurity(position.isin, update).subscribe({ next: savePrice, error: fail });
     } else {
       savePrice();
     }

@@ -312,6 +312,54 @@ describe('Kurse', () => {
     await request(app).put('/api/securities/XX0000000000').send({}).expect(404);
   });
 
+  it('stellt Online-Abruf und Yahoo-Kürzel je Wertpapier ein', async () => {
+    const put = (update: object) => request(app).put('/api/securities/IE00B4L5Y983').send(update);
+    const position = () => depot.overview().positions[0]!;
+    expect(position()).toMatchObject({
+      onlinePrices: true,
+      priceSymbol: null,
+      resolvedSymbol: null,
+    });
+
+    depot.setResolvedSymbol('IE00B4L5Y983', 'IWDA.L');
+    expect(position().resolvedSymbol).toBe('IWDA.L');
+    await put({ priceSymbol: ' EUNL.DE ', onlinePrices: false }).expect(204);
+    // Ein eigenes Kürzel verwirft das ermittelte
+    expect(position()).toMatchObject({
+      onlinePrices: false,
+      priceSymbol: 'EUNL.DE',
+      resolvedSymbol: null,
+    });
+    expect(depot.onlineSecurities()).toEqual([]);
+
+    await put({ priceSymbol: '', onlinePrices: true }).expect(204);
+    expect(position()).toMatchObject({ onlinePrices: true, priceSymbol: null });
+    expect(depot.onlineSecurities()).toEqual([
+      { isin: 'IE00B4L5Y983', name: 'iShs Core MSCI World U.ETF', symbol: null, resolved: null },
+    ]);
+    await put({ priceSymbol: null }).expect(204);
+
+    expect((await put({ priceSymbol: 'mit leerzeichen' }).expect(400)).body.code).toBe(
+      'INVALID_SYMBOL',
+    );
+    expect((await put({ onlinePrices: 'ja' }).expect(400)).body.code).toBe('INVALID_ONLINE');
+  });
+
+  it('speichert Online-Kurse ohne Einzelmeldung und prüft Zeiträume', () => {
+    const listener = vi.fn();
+    depot.onChange(listener);
+    depot.storeOnlinePrice('IE00B4L5Y983', '2025-12-30', 61.5);
+    expect(listener).not.toHaveBeenCalled();
+    expect(depot.hasPriceBetween('IE00B4L5Y983', '2025-12-21', '2025-12-31')).toBe(true);
+    expect(depot.hasPriceBetween('IE00B4L5Y983', '2024-12-21', '2024-12-31')).toBe(false);
+    depot.notifyChanged();
+    expect(listener).toHaveBeenCalledOnce();
+    expect(depot.overview(2026).positions[0]).toMatchObject({ priceSource: 'document' });
+    // Gleicher Tag: Online-Kurs schlägt den Kurs aus dem Dokument
+    depot.storeOnlinePrice('IE00B4L5Y983', '2026-03-15', 58);
+    expect(depot.overview(2026).positions[0]).toMatchObject({ price: 58, priceSource: 'yahoo' });
+  });
+
   it('meldet Änderungen an Zuhörer', () => {
     const listener = vi.fn();
     depot.onChange(listener);
@@ -497,6 +545,7 @@ describe('Migration', () => {
       INSERT INTO transactions
           (document_id, type, date, isin, quantity, price, gross_cents, fee_cents, tax_cents, total_cents)
         VALUES (1, 'buy', '2026-01-02', 'IE00B4L5Y983', 1, 10, 1000, 0, 0, 1000);
+      INSERT INTO prices (isin, date, price, source) VALUES ('IE00B4L5Y983', '2026-06-30', 12, 'manual');
       PRAGMA user_version = 1;`);
     old.close();
 
@@ -504,6 +553,45 @@ describe('Migration', () => {
     const service = new DepotService(migrated, { today: () => '2026-07-01' });
     expect(service.listDepots()).toMatchObject([{ number: '', documentCount: 1 }]);
     expect(service.listTransactions()[0]).toMatchObject({ depotId: 1, gainCents: null });
+    // v3: Kurse bleiben erhalten, neue Quellen sind möglich
+    expect(service.overview(2026).positions[0]).toMatchObject({
+      price: 12,
+      priceSource: 'manual',
+      onlinePrices: true,
+    });
+    service.storeOnlinePrice('IE00B4L5Y983', '2026-07-01', 13);
+    expect(service.overview(2026).positions[0]).toMatchObject({ price: 13, priceSource: 'yahoo' });
     migrated.close();
+  });
+});
+
+describe('Online-Kurse (API)', () => {
+  it('liefert ohne Kursabruf den Status „aus“', async () => {
+    const off = {
+      mode: 'off',
+      intervalMinutes: 15,
+      running: false,
+      lastRunAt: null,
+      lastUpdated: 0,
+      lastErrors: [],
+    };
+    expect((await request(app).get('/api/prices/status').expect(200)).body).toEqual(off);
+    expect((await request(app).post('/api/prices/refresh').expect(200)).body).toEqual(off);
+  });
+
+  it('liefert Status und stößt den Abruf an', async () => {
+    const status = {
+      mode: 'daily' as const,
+      intervalMinutes: 15,
+      running: false,
+      lastRunAt: '2026-07-01T20:30:00.000Z',
+      lastUpdated: 2,
+      lastErrors: [],
+    };
+    const prices = { status: vi.fn(() => status), run: vi.fn(async () => status) };
+    const withPrices = createApp({ depot, prices });
+    expect((await request(withPrices).get('/api/prices/status').expect(200)).body).toEqual(status);
+    await request(withPrices).post('/api/prices/refresh').expect(200);
+    expect(prices.run).toHaveBeenCalledOnce();
   });
 });

@@ -8,6 +8,7 @@ import type {
   ImportFailure,
   ImportResult,
   OpeningInput,
+  PriceUpdateStatus,
   Overview,
   PriceInput,
   SecurityUpdate,
@@ -81,6 +82,14 @@ export class ApiService {
 
   deleteImportFailure(id: number) {
     return this.http.delete<void>(`api/import-failures/${id}`);
+  }
+
+  priceStatus() {
+    return this.http.get<PriceUpdateStatus>('api/prices/status');
+  }
+
+  refreshPrices() {
+    return this.http.post<PriceUpdateStatus>('api/prices/refresh', {});
   }
 
   addPrice(isin: string, input: PriceInput) {

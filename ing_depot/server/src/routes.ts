@@ -2,6 +2,7 @@ import { Router, type RequestHandler } from 'express';
 import multer from 'multer';
 import type {
   DepotUpdate,
+  PriceUpdateStatus,
   OpeningInput,
   PriceInput,
   SecurityUpdate,
@@ -50,7 +51,26 @@ function parseDepot(value: unknown): number | undefined {
 const body = <T>(value: unknown): Partial<T> =>
   value && typeof value === 'object' ? (value as Partial<T>) : {};
 
-export function depotRouter(depot: DepotService, scanInbox?: () => Promise<unknown>): Router {
+/** Schnittstelle des Kursabrufs (siehe `PriceUpdater`). */
+export interface PriceUpdates {
+  status(): PriceUpdateStatus;
+  run(): Promise<PriceUpdateStatus>;
+}
+
+const PRICES_OFF: PriceUpdateStatus = {
+  mode: 'off',
+  intervalMinutes: 15,
+  running: false,
+  lastRunAt: null,
+  lastUpdated: 0,
+  lastErrors: [],
+};
+
+export function depotRouter(
+  depot: DepotService,
+  scanInbox?: () => Promise<unknown>,
+  prices?: PriceUpdates,
+): Router {
   const router = Router();
 
   router.get('/overview', (req, res) => {
@@ -115,6 +135,16 @@ export function depotRouter(depot: DepotService, scanInbox?: () => Promise<unkno
     res.status(204).end();
   });
 
+  // ---- Online-Kurse ----
+  router.get('/prices/status', (_req, res) => {
+    res.json(prices?.status() ?? PRICES_OFF);
+  });
+
+  // Auch bei ausgeschaltetem Zeitplan: der Nutzer stößt den Abruf ausdrücklich an
+  router.post('/prices/refresh', async (_req, res) => {
+    res.json(prices ? await prices.run() : PRICES_OFF);
+  });
+
   // ---- Depots ----
   router.get('/depots', (_req, res) => {
     res.json(depot.listDepots());
@@ -126,7 +156,7 @@ export function depotRouter(depot: DepotService, scanInbox?: () => Promise<unkno
 
   // ---- Wertpapiere / Kurse ----
   router.put('/securities/:isin', (req, res) => {
-    depot.setPriceEntity(String(req.params['isin']), body<SecurityUpdate>(req.body).priceEntity);
+    depot.updateSecurity(String(req.params['isin']), body<SecurityUpdate>(req.body));
     res.status(204).end();
   });
 

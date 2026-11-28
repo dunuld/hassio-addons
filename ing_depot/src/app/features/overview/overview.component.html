@@ -81,6 +81,38 @@
       }
     </p>
 
+    @if (priceStatus(); as s) {
+      <div class="footnote price-status">
+        <span>
+          Online-Kurse (Yahoo Finance): {{ scheduleLabel(s) }} · {{ lastRunLabel(s) }}
+          @if (s.lastRunAt) {
+            ({{ s.lastUpdated }} {{ s.lastUpdated === 1 ? 'Kurs' : 'Kurse' }})
+          }
+        </span>
+        <button
+          type="button"
+          class="btn small"
+          [disabled]="refreshing() || s.running"
+          (click)="refreshPrices()"
+        >
+          {{ refreshing() || s.running ? 'Rufe ab …' : 'Kurse jetzt aktualisieren' }}
+        </button>
+        @if (s.lastErrors.length > 0) {
+          <details class="price-errors">
+            <summary>
+              {{ s.lastErrors.length }}
+              {{ s.lastErrors.length === 1 ? 'Hinweis' : 'Hinweise' }} zum letzten Abruf
+            </summary>
+            <ul>
+              @for (e of s.lastErrors; track $index) {
+                <li>{{ e }}</li>
+              }
+            </ul>
+          </details>
+        }
+      </div>
+    }
+
     @if (hasMonthlyData()) {
       <section class="app-card">
         <h3>Monatsverlauf {{ o.year }}</h3>
@@ -174,6 +206,19 @@
                     <label>
                       Kurs aus HA-Entität
                       <input name="entity" [(ngModel)]="entityInput" placeholder="sensor.…" />
+                    </label>
+                    <label class="checkbox">
+                      <input type="checkbox" name="online" [(ngModel)]="onlineInput" />
+                      Online-Kurs abrufen
+                    </label>
+                    <label>
+                      Yahoo-Kürzel
+                      <input
+                        name="symbol"
+                        [(ngModel)]="symbolInput"
+                        [placeholder]="p.resolvedSymbol ?? 'automatisch'"
+                        [disabled]="!onlineInput"
+                      />
                     </label>
                     <button type="submit" class="btn primary">Speichern</button>
                     <button type="button" class="btn" (click)="cancelEdit()">Abbrechen</button>

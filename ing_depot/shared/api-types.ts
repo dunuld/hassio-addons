@@ -114,7 +114,24 @@ export interface ImportFailure {
   createdAt: string;
 }
 
-export type PriceSource = 'document' | 'manual' | 'ha';
+/** Herkunft eines Kurses; `yahoo` = Online-Kurs von Yahoo Finance */
+export type PriceSource = 'document' | 'manual' | 'ha' | 'yahoo';
+
+/** Abruf der Online-Kurse: aus, einmal täglich nach Börsenschluss oder laufend */
+export type PriceUpdateMode = 'off' | 'daily' | 'intraday';
+
+export interface PriceUpdateStatus {
+  mode: PriceUpdateMode;
+  /** Abstand der Abrufe im Modus `intraday` (Minuten) */
+  intervalMinutes: number;
+  running: boolean;
+  /** Ende des letzten Abrufs (ISO-Zeitstempel) */
+  lastRunAt: string | null;
+  /** Anzahl der beim letzten Abruf gespeicherten Kurse */
+  lastUpdated: number;
+  /** Probleme beim letzten Abruf, z. B. kein Kürzel gefunden */
+  lastErrors: string[];
+}
 
 export interface Position {
   isin: string;
@@ -128,6 +145,12 @@ export interface Position {
   priceSource: PriceSource | null;
   /** HA-Entität, aus der der Kurs gelesen wird */
   priceEntity: string | null;
+  /** Online-Kurse für dieses Wertpapier abrufen */
+  onlinePrices: boolean;
+  /** Selbst eingetragenes Yahoo-Kürzel, z. B. `VGWL.DE` */
+  priceSymbol: string | null;
+  /** Automatisch ermitteltes Yahoo-Kürzel */
+  resolvedSymbol: string | null;
   valueCents: number;
   /** Kursgewinn seit Kauf (Wert − Einstandswert) */
   gainCents: number;
@@ -203,6 +226,10 @@ export interface Overview {
 export interface SecurityUpdate {
   /** HA-Entität mit dem aktuellen Kurs in EUR; leer/`null` = keine */
   priceEntity?: string | null;
+  /** Online-Kurse abrufen (Standard: ja) */
+  onlinePrices?: boolean;
+  /** Yahoo-Kürzel festlegen; leer/`null` = automatisch ermitteln */
+  priceSymbol?: string | null;
 }
 
 export interface PriceInput {

@@ -71,6 +71,23 @@ describe('Konfiguration', () => {
     expect(loadConfig({ INBOX_DIR: '/tmp/eingang' }).inboxDir).toBe('/tmp/eingang');
   });
 
+  it('liest Zeitplan und Abstand des Online-Kursabrufs', () => {
+    expect(loadConfig({})).toMatchObject({ priceUpdate: 'daily', priceIntervalMinutes: 15 });
+    expect(loadConfig({}, { price_update: 'intraday', price_interval: 30 })).toMatchObject({
+      priceUpdate: 'intraday',
+      priceIntervalMinutes: 30,
+    });
+    expect(loadConfig({ PRICE_UPDATE: 'off', PRICE_INTERVAL: '1' })).toMatchObject({
+      priceUpdate: 'off',
+      priceIntervalMinutes: 5,
+    });
+    expect(loadConfig({}, { price_update: 'stündlich', price_interval: 2.5 })).toMatchObject({
+      priceUpdate: 'daily',
+      priceIntervalMinutes: 15,
+    });
+    expect(loadConfig({ PRICE_INTERVAL: '500' }).priceIntervalMinutes).toBe(120);
+  });
+
   it('ignoriert fehlende oder kaputte Add-on-Optionen', () => {
     const dir = tempDir();
     expect(readAddonOptions(dir)).toEqual({});
