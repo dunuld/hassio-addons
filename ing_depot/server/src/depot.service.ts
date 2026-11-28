@@ -3,6 +3,9 @@ import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import type {
   Depot,
+  DividendCalendar,
+  DividendEntry,
+  DividendMonth,
   DepotDocument,
   DepotUpdate,
   DocumentType,
@@ -20,6 +23,7 @@ import { transaction, type Database, type Row } from './db/database.js';
 import { badRequest, notFound } from './http-error.js';
 import { DocumentParseError, parseIngDocument, type ParsedDocument } from './ing-parser.js';
 import { extractLines } from './pdf-text.js';
+import type { DividendEvent } from './prices/yahoo.js';
 import {
   computeOverview,
   mergeOverviews,
@@ -76,6 +80,17 @@ export function isValidDate(value: unknown): value is string {
   if (typeof value !== 'string' || !ISO_DATE_RE.test(value)) return false;
   const date = new Date(`${value}T00:00:00Z`);
   return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value;
+}
+
+/** Ausstehende Dividenden: Ex-Tag höchstens so viele Tage zurück, Gutschrift fehlt noch */
+const PENDING_DAYS = 60;
+
+/** Verschiebt ein ISO-Datum um Tage bzw. Jahre (29.02. wird im Nicht-Schaltjahr zum 01.03.). */
+export function shiftDate(iso: string, by: { days?: number; years?: number }): string {
+  const date = new Date(`${iso}T00:00:00Z`);
+  if (by.years) date.setUTCFullYear(date.getUTCFullYear() + by.years);
+  if (by.days) date.setUTCDate(date.getUTCDate() + by.days);
+  return date.toISOString().slice(0, 10);
 }
 
 const DOCUMENT_LABEL: Record<DocumentType, string> = {
@@ -510,6 +525,11 @@ export class DepotService {
       }));
   }
 
+  /** Blendet alle nicht erkannten Dateien aus; liefert deren Anzahl. */
+  clearFailures(): number {
+    return Number(this.db.prepare('DELETE FROM import_failures').run().changes);
+  }
+
   deleteFailure(id: number): void {
     const result = this.db.prepare('DELETE FROM import_failures WHERE id = ?').run(id);
     if (result.changes === 0) throw notFound('Eintrag nicht gefunden');
@@ -773,6 +793,143 @@ export class DepotService {
       .prepare('SELECT isin, price_entity FROM securities WHERE price_entity IS NOT NULL')
       .all()
       .map((row) => ({ isin: String(row['isin']), entity: String(row['price_entity']) }));
+  }
+
+  // ---- Dividendenkalender ----
+
+  /**
+   * Ersetzt die Dividendenhistorie eines Wertpapiers im Zeitraum `from`–`to` und merkt sich den
+   * Abrufzeitpunkt.
+   */
+  replaceDividendEvents(
+    isin: string,
+    from: string,
+    to: string,
+    events: DividendEvent[],
+    fetchedAt: string,
+  ): void {
+    transaction(this.db, () => {
+      this.db
+        .prepare('DELETE FROM dividend_events WHERE isin = ? AND ex_date BETWEEN ? AND ?')
+        .run(isin, from, to);
+      const insert = this.db.prepare(
+        'INSERT OR REPLACE INTO dividend_events (isin, ex_date, amount, currency) VALUES (?, ?, ?, ?)',
+      );
+      for (const e of events) insert.run(isin, e.exDate, e.amount, e.currency);
+      this.db
+        .prepare('UPDATE securities SET dividends_fetched_at = ? WHERE isin = ?')
+        .run(fetchedAt, isin);
+    });
+  }
+
+  /** Letzter Abruf der Dividendenhistorie (ISO-Zeitstempel) oder `null`. */
+  dividendsFetchedAt(isin: string): string | null {
+    const row = this.db
+      .prepare('SELECT dividends_fetched_at FROM securities WHERE isin = ?')
+      .get(isin);
+    return (row?.['dividends_fetched_at'] as string | null | undefined) ?? null;
+  }
+
+  /**
+   * Dividendenkalender eines Jahres: gezahlte Dividenden laut Ertragsgutschriften und – im
+   * laufenden Jahr – ausstehende sowie aus der Historie der letzten 12 Monate hochgerechnete.
+   */
+  dividendCalendar(year?: number, depotId?: number): DividendCalendar {
+    const today = this.today();
+    const currentYear = Number(today.slice(0, 4));
+    const selected = year ?? currentYear;
+    const isCurrentYear = selected === currentYear;
+    const overview = this.overview(selected, depotId);
+    const months: DividendMonth[] = Array.from({ length: 12 }, (_, i) => ({
+      month: i + 1,
+      paidGrossCents: 0,
+      paidNetCents: 0,
+      expectedGrossCents: 0,
+      entries: [],
+    }));
+    const add = (entry: DividendEntry): void => {
+      if (!entry.date.startsWith(`${selected}-`)) return;
+      const month = months[Number(entry.date.slice(5, 7)) - 1]!;
+      month.entries.push(entry);
+      if (entry.status === 'paid') {
+        month.paidGrossCents += entry.grossCents;
+        month.paidNetCents += entry.netCents ?? 0;
+      } else {
+        month.expectedGrossCents += entry.grossCents;
+      }
+    };
+
+    const dividends = this.listTransactions(undefined, depotId).filter(
+      (t) => t.type === 'dividend',
+    );
+    for (const tx of dividends) {
+      if (!tx.date.startsWith(`${selected}-`)) continue;
+      add({
+        date: tx.date,
+        isin: tx.isin,
+        name: tx.name,
+        status: 'paid',
+        quantity: tx.quantity,
+        perShare: null,
+        grossCents: tx.grossCents,
+        netCents: tx.totalCents,
+      });
+    }
+
+    const withoutHistory: string[] = [];
+    if (isCurrentYear) {
+      const yearAgo = shiftDate(today, { days: -365 });
+      const pendingSince = shiftDate(today, { days: -PENDING_DAYS });
+      const yearEnd = `${selected}-12-31`;
+      const held = overview.positions.filter((p) => p.quantity > 0 && !p.isin.startsWith('WKN:'));
+      for (const position of held) {
+        if (!position.onlinePrices || !this.dividendsFetchedAt(position.isin)) {
+          withoutHistory.push(position.name);
+          continue;
+        }
+        const paidDates = dividends.filter((t) => t.isin === position.isin).map((t) => t.date);
+        const events = this.db
+          .prepare(
+            'SELECT ex_date, amount FROM dividend_events WHERE isin = ? AND ex_date > ? AND ex_date <= ?',
+          )
+          .all(position.isin, yearAgo, today);
+        for (const row of events) {
+          const exDate = String(row['ex_date']);
+          const perShare = Number(row['amount']);
+          const base = {
+            isin: position.isin,
+            name: position.name,
+            quantity: position.quantity,
+            perShare,
+            grossCents: Math.round(position.quantity * perShare * 100),
+            netCents: null,
+          };
+          // Ex-Tag vorbei, Gutschrift aber noch nicht importiert
+          const paid = paidDates.some(
+            (d) => d >= exDate && d <= shiftDate(exDate, { days: PENDING_DAYS }),
+          );
+          if (exDate >= pendingSince && !paid) add({ ...base, date: exDate, status: 'pending' });
+          // Gleiche Zahlung ein Jahr später
+          const next = shiftDate(exDate, { years: 1 });
+          if (next > today && next <= yearEnd) add({ ...base, date: next, status: 'expected' });
+        }
+      }
+    }
+
+    for (const month of months) month.entries.sort((a, b) => a.date.localeCompare(b.date));
+    const sum = (pick: (m: DividendMonth) => number): number =>
+      months.reduce((total, m) => total + pick(m), 0);
+    return {
+      year: selected,
+      depotId: depotId ?? null,
+      years: overview.years,
+      isCurrentYear,
+      months,
+      paidGrossCents: sum((m) => m.paidGrossCents),
+      paidNetCents: sum((m) => m.paidNetCents),
+      expectedGrossCents: sum((m) => m.expectedGrossCents),
+      withoutHistory: withoutHistory.sort((a, b) => a.localeCompare(b, 'de')),
+    };
   }
 
   // ---- Auswertung ----

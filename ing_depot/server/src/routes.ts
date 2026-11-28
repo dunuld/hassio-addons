@@ -116,6 +116,11 @@ export function depotRouter(
     res.json(depot.listFailures());
   });
 
+  router.delete('/import-failures', (_req, res) => {
+    depot.clearFailures();
+    res.status(204).end();
+  });
+
   router.delete('/import-failures/:id', (req, res) => {
     depot.deleteFailure(parseId(req.params['id']));
     res.status(204).end();
@@ -133,6 +138,11 @@ export function depotRouter(
   router.delete('/transactions/:id', (req, res) => {
     depot.deleteTransaction(parseId(req.params['id']));
     res.status(204).end();
+  });
+
+  // ---- Dividendenkalender ----
+  router.get('/dividends', (req, res) => {
+    res.json(depot.dividendCalendar(parseYear(req.query['year']), parseDepot(req.query['depot'])));
   });
 
   // ---- Online-Kurse ----

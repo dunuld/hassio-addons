@@ -47,7 +47,10 @@
 }
 
 @if (failures().length > 0) {
-  <h3>Nicht erkannt (Eingangsordner)</h3>
+  <div class="section-head">
+    <h3>Nicht erkannt (Eingangsordner)</h3>
+    <button type="button" class="btn small" (click)="clearFailures()">Alle ausblenden</button>
+  </div>
   <div class="app-card table-scroll">
     <table class="data-table">
       <tbody>

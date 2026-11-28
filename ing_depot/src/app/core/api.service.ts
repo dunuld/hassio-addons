@@ -4,6 +4,7 @@ import type {
   Depot,
   DepotDocument,
   DepotUpdate,
+  DividendCalendar,
   HealthResponse,
   ImportFailure,
   ImportResult,
@@ -29,6 +30,13 @@ export class ApiService {
     if (year) params['year'] = year;
     if (depot) params['depot'] = depot;
     return this.http.get<Overview>('api/overview', { params });
+  }
+
+  dividends(year?: number, depot?: number | null) {
+    const params: Record<string, number> = {};
+    if (year) params['year'] = year;
+    if (depot) params['depot'] = depot;
+    return this.http.get<DividendCalendar>('api/dividends', { params });
   }
 
   depots() {
@@ -78,6 +86,10 @@ export class ApiService {
 
   importFailures() {
     return this.http.get<ImportFailure[]>('api/import-failures');
+  }
+
+  clearImportFailures() {
+    return this.http.delete<void>('api/import-failures');
   }
 
   deleteImportFailure(id: number) {

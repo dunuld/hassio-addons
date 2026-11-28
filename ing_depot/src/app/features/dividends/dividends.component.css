@@ -1,0 +1,188 @@
+.tiles {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.tile {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  padding: 0.9rem 1rem;
+  background: var(--app-surface);
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius);
+  box-shadow: var(--app-shadow);
+}
+
+.tile-label {
+  font-size: 0.85rem;
+  color: var(--app-text-secondary);
+}
+
+.tile-value {
+  font-size: 1.5rem;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+.tile-value.expected {
+  color: var(--app-text-secondary);
+}
+
+.tile-sub {
+  font-size: 0.8rem;
+  color: var(--app-text-muted);
+}
+
+.footnote {
+  margin: 0 0 1rem;
+  font-size: 0.85rem;
+  color: var(--app-text-secondary);
+}
+
+.bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.4rem;
+  height: 160px;
+}
+
+.bar-group {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-width: 0;
+}
+
+.bar-stack {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  align-items: center;
+  border-bottom: 1px solid var(--app-border);
+}
+
+.bar {
+  width: 70%;
+  max-width: 28px;
+}
+
+.bar.paid {
+  background: var(--app-success-text);
+  border-radius: 0 0 0 0;
+}
+
+.bar.expected {
+  border-radius: 3px 3px 0 0;
+  background: repeating-linear-gradient(
+    -45deg,
+    var(--app-success-bg),
+    var(--app-success-bg) 3px,
+    var(--app-success-text) 3px,
+    var(--app-success-text) 4px
+  );
+  opacity: 0.7;
+}
+
+.bar-label {
+  padding-top: 0.25rem;
+  text-align: center;
+  font-size: 0.75rem;
+  color: var(--app-text-secondary);
+}
+
+.legend {
+  margin: 0.75rem 0 0;
+  font-size: 0.8rem;
+  color: var(--app-text-secondary);
+}
+
+.swatch {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  margin: 0 0.25rem 0 0.75rem;
+  border-radius: 2px;
+}
+
+.swatch:first-child {
+  margin-left: 0;
+}
+
+.swatch.paid {
+  background: var(--app-success-text);
+}
+
+.swatch.expected {
+  background: var(--app-success-bg);
+  border: 1px dashed var(--app-success-text);
+}
+
+h3 {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+
+.month-sum {
+  font-weight: 400;
+  font-size: 0.95rem;
+  color: var(--app-text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+tr.planned td {
+  color: var(--app-text-secondary);
+  font-style: italic;
+}
+
+.badge {
+  display: inline-block;
+  padding: 0.1rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-style: normal;
+  white-space: nowrap;
+}
+
+.badge.paid {
+  background: var(--app-success-bg);
+  color: var(--app-success-text);
+}
+
+.badge.pending {
+  background: var(--app-warning-bg);
+  color: var(--app-warning-text);
+}
+
+.badge.expected {
+  background: var(--app-bg-secondary);
+  color: var(--app-text-secondary);
+}
+
+@media (max-width: 700px) {
+  .tiles {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Schmale Bildschirme: Datum, Wertpapier, Brutto und Status ohne seitliches Scrollen */
+@media (max-width: 600px) {
+  .optional {
+    display: none;
+  }
+
+  .data-table th,
+  .data-table td {
+    padding: 0.45rem 0.4rem;
+    font-size: 0.85rem;
+  }
+
+  .badge {
+    padding: 0.1rem 0.35rem;
+  }
+}

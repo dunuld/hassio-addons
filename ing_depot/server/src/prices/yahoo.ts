@@ -61,8 +61,16 @@ interface SearchQuote {
   exchange?: unknown;
 }
 
+/** Ausschüttung laut Yahoo: Ex-Tag und Betrag je Stück, in EUR umgerechnet */
+export interface DividendEvent {
+  exDate: string;
+  amount: number;
+  currency: string;
+}
+
 interface ChartResult {
   meta?: { currency?: unknown; regularMarketPrice?: unknown; regularMarketTime?: unknown };
+  events?: { dividends?: Record<string, { amount?: unknown; date?: unknown }> };
   timestamp?: unknown;
   indicators?: { quote?: { close?: unknown }[] };
 }
@@ -150,6 +158,37 @@ export class YahooClient {
       }
     }
     return null;
+  }
+
+  /**
+   * Dividenden mit Ex-Tag zwischen `from` und `to` (einschließlich), je Stück in EUR umgerechnet
+   * (aktueller Devisenkurs). `null` = Kürzel unbekannt.
+   */
+  async dividends(symbol: string, from: string, to: string): Promise<DividendEvent[] | null> {
+    const result = await this.chart(
+      symbol,
+      `period1=${isoToUnix(from)}&period2=${isoToUnix(to) + DAY}&events=div`,
+    );
+    if (!result) return null;
+    const currency = String(result.meta?.currency ?? 'EUR');
+    const events: DividendEvent[] = [];
+    for (const raw of Object.values(result.events?.dividends ?? {})) {
+      const amount = Number(raw.amount);
+      const time = Number(raw.date);
+      if (!Number.isFinite(amount) || amount <= 0 || !Number.isFinite(time)) continue;
+      const exDate = berlinDate(time);
+      if (exDate < from || exDate > to) continue;
+      // Je-Stück-Beträge genauer als auf Cent umrechnen – sie werden mit dem Bestand multipliziert
+      let value = amount;
+      let unit = currency;
+      if (unit === 'GBp' || unit === 'GBX') {
+        value /= 100;
+        unit = 'GBP';
+      }
+      if (unit !== 'EUR') value *= await this.fxRate(unit, null);
+      events.push({ exDate, amount: Math.round(value * 1e6) / 1e6, currency });
+    }
+    return events.sort((a, b) => a.exDate.localeCompare(b.exDate));
   }
 
   /** Rechnet einen Kurs in EUR um; `fxDate` = Devisenkurs dieses Tages, `null` = aktueller. */

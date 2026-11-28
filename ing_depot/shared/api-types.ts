@@ -258,3 +258,54 @@ export interface PriceInput {
   /** ISO-Datum; Standard: heute */
   date?: string;
 }
+
+/** Status einer Dividende im Kalender */
+export type DividendStatus =
+  /** gezahlt laut Ertragsgutschrift */
+  | 'paid'
+  /** Ex-Tag liegt zurück, Gutschrift steht noch aus */
+  | 'pending'
+  /** hochgerechnet aus den Zahlungen der letzten 12 Monate */
+  | 'expected';
+
+export interface DividendEntry {
+  /** Zahltag (gezahlt) bzw. Ex-Tag (ausstehend/erwartet) */
+  date: string;
+  isin: string;
+  name: string;
+  status: DividendStatus;
+  /** Stückzahl (gezahlt: laut Abrechnung, sonst aktueller Bestand) */
+  quantity: number;
+  /** Betrag je Stück in EUR (nur ausstehend/erwartet) */
+  perShare: number | null;
+  /** Bruttobetrag (erwartet: Schätzung vor Steuern) */
+  grossCents: number;
+  /** Nettobetrag – nur bei gezahlten Dividenden bekannt */
+  netCents: number | null;
+}
+
+export interface DividendMonth {
+  /** 1–12 */
+  month: number;
+  paidGrossCents: number;
+  paidNetCents: number;
+  /** Ausstehend und erwartet, brutto */
+  expectedGrossCents: number;
+  entries: DividendEntry[];
+}
+
+export interface DividendCalendar {
+  year: number;
+  /** Gewähltes Depot; `null` = alle Depots */
+  depotId: number | null;
+  /** Jahre mit Daten (absteigend), inkl. des aktuellen */
+  years: number[];
+  /** Erwartete Dividenden gibt es nur für das laufende Jahr */
+  isCurrentYear: boolean;
+  months: DividendMonth[];
+  paidGrossCents: number;
+  paidNetCents: number;
+  expectedGrossCents: number;
+  /** Gehaltene Wertpapiere ohne Dividendenhistorie (kein Kürzel bzw. noch nicht abgerufen) */
+  withoutHistory: string[];
+}

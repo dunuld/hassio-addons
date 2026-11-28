@@ -1,0 +1,122 @@
+<div class="page-head">
+  <h2>Dividenden</h2>
+  @if (calendar(); as c) {
+    <div class="filters">
+      <app-depot-select />
+      <label class="year-select">
+        Jahr
+        <select #year (change)="selectYear(year.value)">
+          @for (y of c.years; track y) {
+            <option [value]="y" [selected]="y === c.year">{{ y }}</option>
+          }
+        </select>
+      </label>
+    </div>
+  }
+</div>
+
+@if (error()) {
+  <p class="alert error" role="alert">{{ error() }}</p>
+}
+
+@if (calendar(); as c) {
+  @if (c.withoutHistory.length > 0) {
+    <p class="footnote without-history">
+      Ohne Dividendenhistorie: {{ c.withoutHistory.join(', ') }}. Für diese Wertpapiere fehlen
+      erwartete Dividenden – die Historie wird mit dem nächsten Kursabruf geholt; ohne Online-Abruf
+      oder Yahoo-Kürzel bleibt sie leer.
+    </p>
+  }
+
+  <section class="tiles" aria-label="Summen">
+    <div class="tile">
+      <span class="tile-label">Gezahlt {{ c.year }}</span>
+      <span class="tile-value">{{ euro(c.paidNetCents) }}</span>
+      <span class="tile-sub">netto · brutto {{ euro(c.paidGrossCents) }}</span>
+    </div>
+    @if (c.isCurrentYear) {
+      <div class="tile">
+        <span class="tile-label">Erwartet bis Dezember</span>
+        <span class="tile-value expected">{{ euro(c.expectedGrossCents) }}</span>
+        <span class="tile-sub">brutto, vor Steuern</span>
+      </div>
+      <div class="tile">
+        <span class="tile-label">Gesamt {{ c.year }}</span>
+        <span class="tile-value">{{ euro(c.paidGrossCents + c.expectedGrossCents) }}</span>
+        <span class="tile-sub">brutto, gezahlt und erwartet</span>
+      </div>
+    }
+  </section>
+
+  @if (c.isCurrentYear) {
+    <p class="footnote">
+      Erwartete Dividenden sind eine Hochrechnung: die Ausschüttungen der letzten 12 Monate laut
+      Yahoo Finance, ein Jahr später mit dem aktuellen Bestand. Beträge brutto vor Steuern, Datum =
+      voraussichtlicher Ex-Tag; Fremdwährungen zum aktuellen Devisenkurs umgerechnet.
+    </p>
+  }
+
+  <section class="app-card">
+    <div class="bars" role="img" aria-label="Dividenden je Monat">
+      @for (m of c.months; track m.month) {
+        <div class="bar-group" [title]="monthNames[m.month - 1] + ': ' + euro(monthTotal(m))">
+          <div class="bar-stack">
+            <div class="bar expected" [style.height.%]="barHeight(m.expectedGrossCents)"></div>
+            <div class="bar paid" [style.height.%]="barHeight(m.paidGrossCents)"></div>
+          </div>
+          <span class="bar-label">{{ monthShort[m.month - 1] }}</span>
+        </div>
+      }
+    </div>
+    <p class="legend">
+      <span class="swatch paid"></span> Gezahlt (brutto)
+      @if (c.isCurrentYear) {
+        <span class="swatch expected"></span> Ausstehend und erwartet (brutto)
+      }
+    </p>
+  </section>
+
+  @for (m of activeMonths(); track m.month) {
+    <h3>
+      {{ monthNames[m.month - 1] }} {{ c.year }}
+      <span class="month-sum">{{ euro(monthTotal(m)) }}</span>
+    </h3>
+    <div class="app-card table-scroll">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Datum</th>
+            <th>Wertpapier</th>
+            <th class="num optional">Stück</th>
+            <th class="num optional">Je Stück</th>
+            <th class="num">Brutto</th>
+            <th class="num optional">Netto</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (e of m.entries; track $index) {
+            <tr [class.planned]="e.status !== 'paid'">
+              <td>{{ date(e.date) }}</td>
+              <td>
+                {{ e.name }}
+                <div class="muted">{{ e.isin }}</div>
+              </td>
+              <td class="num optional">{{ quantity(e.quantity) }}</td>
+              <td class="num optional">{{ perShare(e.perShare) }}</td>
+              <td class="num">{{ euro(e.grossCents) }}</td>
+              <td class="num optional">{{ e.netCents === null ? '–' : euro(e.netCents) }}</td>
+              <td>
+                <span class="badge" [class]="'badge ' + e.status">{{ statusLabel(e.status) }}</span>
+              </td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+  } @empty {
+    <div class="app-card empty">Keine Dividenden in {{ c.year }}.</div>
+  }
+} @else if (!error()) {
+  <p class="muted">Lade …</p>
+}

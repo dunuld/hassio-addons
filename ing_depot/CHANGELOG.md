@@ -1,11 +1,24 @@
 # Changelog
 
-## 1.1.1 (unveröffentlicht)
+## 1.2.0 (unveröffentlicht)
+
+### Hinzugefügt
+
+- Dividendenkalender als neuer Reiter „Dividenden“: gezahlte Dividenden je Monat laut
+  Ertragsgutschriften (brutto und netto), im laufenden Jahr zusätzlich ausstehende (Ex-Tag
+  vorbei, Gutschrift fehlt) und bis Dezember erwartete Dividenden – hochgerechnet aus den
+  Ausschüttungen der letzten 12 Monate laut Yahoo Finance, brutto vor Steuern
+- Der Online-Kursabruf holt dafür einmal täglich die Dividendenhistorie der gehaltenen Wertpapiere
+- Import: „Alle ausblenden“ für nicht erkannte Dateien aus dem Eingangsordner
 
 ### Geändert
 
 - Depots mit Startpunkt zeigen in der Übersicht keine Hinweise mehr auf Lücken in der Historie
   (fehlende Käufe, fehlende Kurse, Abweichungen zum Depotauszug)
+
+### Technik
+
+- Schema v5: Tabelle für die Dividendenhistorie je Wertpapier
 
 ## 1.1.0 (2026-11-28)
 

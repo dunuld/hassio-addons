@@ -60,6 +60,8 @@ describe('ApiService', () => {
     api.depots().subscribe();
     api.updateDepot(2, { label: 'A' }).subscribe();
     api.priceStatus().subscribe();
+    api.dividends(2025, 2).subscribe();
+    api.dividends().subscribe();
     api.refreshPrices().subscribe();
     api.addOpening(opening).subscribe();
     api.deleteTransaction(3).subscribe();
@@ -68,6 +70,7 @@ describe('ApiService', () => {
     api.scanInbox().subscribe();
     api.importFailures().subscribe();
     api.deleteImportFailure(5).subscribe();
+    api.clearImportFailures().subscribe();
     api.addPrice('IE00', { price: 12 }).subscribe();
     api.updateSecurity('IE00', { priceEntity: 'sensor.x' }).subscribe();
 
@@ -81,6 +84,8 @@ describe('ApiService', () => {
     expectCall('GET', 'api/depots');
     expectCall('PUT', 'api/depots/2');
     expectCall('GET', 'api/prices/status');
+    http.expectOne('api/dividends?year=2025&depot=2').flush({});
+    http.expectOne('api/dividends').flush({});
     expectCall('POST', 'api/prices/refresh');
     expectCall('POST', 'api/transactions');
     expectCall('DELETE', 'api/transactions/3');
@@ -89,6 +94,7 @@ describe('ApiService', () => {
     expectCall('POST', 'api/inbox/scan');
     expectCall('GET', 'api/import-failures');
     expectCall('DELETE', 'api/import-failures/5');
+    expectCall('DELETE', 'api/import-failures');
     expectCall('POST', 'api/securities/IE00/prices');
     expectCall('PUT', 'api/securities/IE00');
     expect(api.documentUrl(9)).toBe('api/documents/9/file');

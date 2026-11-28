@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vite
 import { openDatabase, type Database } from '../src/db/database.js';
 import { DepotService } from '../src/depot.service.js';
 import { PriceUpdater, berlinClock, isDue } from '../src/prices/price-updater.js';
-import type { Quote, YahooClient } from '../src/prices/yahoo.js';
+import type { DividendEvent, Quote, YahooClient } from '../src/prices/yahoo.js';
 import { BUY_LINES, fakePdf, textReader, tradeLines } from './fixtures.js';
 
 const WORLD = 'IE00B4L5Y983';
@@ -64,7 +64,7 @@ describe('PriceUpdater', () => {
 
   /** Yahoo-Ersatz: Kürzel und Kurse je Wertpapier */
   function fakeYahoo(
-    overrides: Partial<Record<'findSymbol' | 'latest' | 'closeOn', unknown>> = {},
+    overrides: Partial<Record<'findSymbol' | 'latest' | 'closeOn' | 'dividends', unknown>> = {},
   ) {
     const yahoo = {
       findSymbol: vi.fn(
@@ -80,6 +80,14 @@ describe('PriceUpdater', () => {
         date: '2025-12-30',
         currency: 'USD',
       })),
+      dividends: vi.fn(async (symbol: string): Promise<DividendEvent[] | null> =>
+        symbol === 'MSFT'
+          ? [
+              { exDate: '2025-08-20', amount: 0.75, currency: 'USD' },
+              { exDate: '2025-11-19', amount: 0.8, currency: 'USD' },
+            ]
+          : [],
+      ),
       ...overrides,
     };
     return yahoo;
@@ -291,5 +299,47 @@ describe('PriceUpdater', () => {
     await run;
     expect(warn).toHaveBeenCalledWith(expect.stringMatching(/^Online-Kurse: /));
     warn.mockRestore();
+  });
+
+  it('holt die Dividendenhistorie höchstens einmal in 20 Stunden', async () => {
+    const yahoo = fakeYahoo();
+    let clock = now;
+    const prices = new PriceUpdater(depot, yahoo as unknown as YahooClient, {
+      mode: 'daily',
+      intervalMinutes: 15,
+      now: () => clock,
+      pauseMs: 0,
+      log: () => undefined,
+    });
+    await prices.run();
+    expect(yahoo.dividends).toHaveBeenCalledWith('MSFT', '2025-05-27', '2026-07-01');
+    expect(yahoo.dividends).toHaveBeenCalledTimes(2);
+    expect(depot.dividendsFetchedAt(MSFT)).toBe(now.toISOString());
+
+    clock = new Date(now.getTime() + 60 * 60 * 1000);
+    await prices.run();
+    expect(yahoo.dividends).toHaveBeenCalledTimes(2);
+
+    clock = new Date(now.getTime() + 21 * 60 * 60 * 1000);
+    await prices.run();
+    expect(yahoo.dividends).toHaveBeenCalledTimes(4);
+  });
+
+  it('meldet Fehler beim Abruf der Dividenden und überspringt unbekannte Kürzel', async () => {
+    const yahoo = fakeYahoo({
+      dividends: vi.fn(async (symbol: string) => {
+        if (symbol === 'MSFT') throw new Error('Status 429');
+        return null;
+      }),
+    });
+    const status = await updater(yahoo).run();
+    expect(status.lastErrors).toEqual(['Microsoft Corp.: Dividenden – Status 429']);
+    expect(depot.dividendsFetchedAt(WORLD)).toBeNull();
+    const odd = fakeYahoo({
+      dividends: vi.fn(async () => {
+        throw 'kaputt';
+      }),
+    });
+    expect((await updater(odd).run()).lastErrors[0]).toBe('Microsoft Corp.: Dividenden – kaputt');
   });
 });

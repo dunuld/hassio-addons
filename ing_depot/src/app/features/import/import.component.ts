@@ -116,6 +116,13 @@ export default class ImportComponent {
     });
   }
 
+  clearFailures(): void {
+    this.api.clearImportFailures().subscribe({
+      next: () => this.load(),
+      error: this.fail('Ausblenden fehlgeschlagen'),
+    });
+  }
+
   removeFailure(failure: ImportFailure): void {
     this.api.deleteImportFailure(failure.id).subscribe({
       next: () => this.load(),

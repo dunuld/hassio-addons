@@ -16,3 +16,10 @@
 .results .alert:last-child {
   margin-bottom: 0;
 }
+
+.section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
