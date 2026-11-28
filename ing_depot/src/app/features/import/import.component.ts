@@ -15,6 +15,8 @@ const TYPE_LABEL: Record<DocumentType, string> = {
   sell: 'Verkauf',
   dividend: 'Ertrag',
   statement: 'Depotauszug',
+  exchange: 'Umtausch',
+  advance_lump_sum: 'Vorabpauschale',
 };
 const STATUS_LABEL = { imported: 'Importiert', duplicate: 'Bereits vorhanden', failed: 'Fehler' };
 const STATUS_CLASS = { imported: 'success', duplicate: 'warning', failed: 'error' };

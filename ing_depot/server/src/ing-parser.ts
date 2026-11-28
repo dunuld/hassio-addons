@@ -47,8 +47,43 @@ export interface ParsedDividend extends ParsedSecurity {
   totalCents: number;
 }
 
+/**
+ * Steuerrelevanter Umtausch (z. B. Fondsverschmelzung): Abgang des alten Wertpapiers zum Kurswert,
+ * Zugang des neuen zum selben Wert – ohne Geldfluss, abgesehen von einbehaltenen Steuern.
+ */
+export interface ParsedExchange extends ParsedSecurity {
+  type: 'exchange';
+  date: string;
+  reference: string | null;
+  quantity: number;
+  price: number;
+  /** Kurswert des Umtauschs = Veräußerungserlös des alten und Einstand des neuen Wertpapiers */
+  grossCents: number;
+  /** Einbehaltene Steuern (Endbetrag zu Ihren Lasten) */
+  taxCents: number;
+  /** Veräußerungsgewinn bzw. -verlust laut Bank */
+  gainCents: number | null;
+  /** Neues Wertpapier – im Dokument oft nur mit WKN genannt */
+  target: { isin: string | null; wkn: string | null };
+  targetQuantity: number;
+}
+
+/** Vorabpauschale thesaurierender Fonds: steuerpflichtiger Ertrag ohne Auszahlung. */
+export interface ParsedAdvanceLumpSum extends ParsedSecurity {
+  type: 'advance_lump_sum';
+  date: string;
+  reference: null;
+  quantity: number;
+  /** Höhe der Vorabpauschale */
+  grossCents: number;
+  /** Darauf einbehaltene Steuern */
+  taxCents: number;
+}
+
 export interface ParsedStatementPosition {
   isin: string;
+  /** WKN, falls im Auszug angegeben */
+  wkn: string | null;
   name: string;
   quantity: number;
   /** Kurs in EUR; `null`, wenn er sich nicht sicher bestimmen ließ */
@@ -64,7 +99,8 @@ export interface ParsedStatement extends ParsedBase {
   positions: ParsedStatementPosition[];
 }
 
-export type ParsedDocument = ParsedTrade | ParsedDividend | ParsedStatement;
+export type ParsedDocument =
+  ParsedTrade | ParsedDividend | ParsedStatement | ParsedExchange | ParsedAdvanceLumpSum;
 
 const NUMBER = String.raw`\d{1,3}(?:\.\d{3})+(?:,\d+)?|\d+(?:,\d+)?`;
 const NUMBER_RE = new RegExp(NUMBER, 'g');
@@ -190,15 +226,7 @@ function parseTrade(doc: Lines, type: 'buy' | 'sell'): ParsedTrade {
     }
   }
 
-  // Steuerseite des Verkaufs: „Veräußerungsgewinn nach Differenzmethode 123,45 EUR“
-  const gainLine = type === 'sell' ? doc.find(/^Veräußerungs(gewinn|verlust)\b/i) : undefined;
-  let gainCents: number | null = null;
-  if (gainLine) {
-    const value = toCents(lastNumber(gainLine) ?? 0);
-    const negative =
-      /verlust/i.test(gainLine) || new RegExp(String.raw`-\s*(${NUMBER})\s*(EUR)?$`).test(gainLine);
-    gainCents = negative ? -value : value;
-  }
+  const gainCents = type === 'sell' ? parseReportedGain(doc) : null;
 
   const priceLine = doc.find(/^Kurs\s+EUR\b/);
   return {
@@ -213,6 +241,89 @@ function parseTrade(doc: Lines, type: 'buy' | 'sell'): ParsedTrade {
     taxCents,
     totalCents,
     gainCents,
+  };
+}
+
+/** Steuerseite: „Veräußerungsgewinn nach Differenzmethode 123,45 EUR“; `null`, wenn sie fehlt. */
+function parseReportedGain(doc: Lines): number | null {
+  const gainLine = doc.find(/^Veräußerungs(gewinn|verlust)\b/i);
+  if (!gainLine) return null;
+  const value = toCents(lastNumber(gainLine) ?? 0);
+  const negative =
+    /verlust/i.test(gainLine) || new RegExp(String.raw`-\s*(${NUMBER})\s*(EUR)?$`).test(gainLine);
+  return negative ? -value : value;
+}
+
+function parseTradeDate(doc: Lines, field: string): string {
+  return required(
+    doc.date(
+      new RegExp(String.raw`Ausführungstag\D*${DATE}`),
+      new RegExp(String.raw`Valuta\D*${DATE}`),
+      new RegExp(String.raw`^Datum:?\s+${DATE}`),
+    ),
+    field,
+  );
+}
+
+/**
+ * „Wertpapierabrechnung zum steuerrelevanten Umtausch“: Das neue Wertpapier steht nur im
+ * Hinweistext, etwa „Ihre Anteile wurden im Verhältnis 1:1 in die WKN NEU001 umgetauscht.“
+ */
+function parseExchange(doc: Lines): ParsedExchange {
+  const security = parseSecurity(doc);
+  const quantity = parseQuantity(doc);
+  const grossCents = required(doc.cents(/^Kurswert\b/), 'Kurswert');
+  const text = doc.lines.join(' ');
+  const target = new RegExp(
+    String.raw`in (?:die|das|den) (?:(?:WKN|Wertpapier-?Kenn-?Nummer)\s+([A-Z0-9]{6})|ISIN\s+([A-Z]{2}[A-Z0-9]{9}\d))`,
+    'i',
+  ).exec(text);
+  if (!target) {
+    throw new DocumentParseError(
+      'Umtausch erkannt, aber das neue Wertpapier (WKN oder ISIN) fehlt im Dokument.',
+    );
+  }
+  const ratio = new RegExp(String.raw`Verhältnis\s+(${NUMBER})\s*:\s*(${NUMBER})`, 'i').exec(text);
+  const factor = ratio ? parseDecimal(ratio[2]!) / parseDecimal(ratio[1]!) : 1;
+  const taxCents = doc.sumCents(TAX_LINE) || (doc.cents(/^Endbetrag zu Ihren Lasten\b/) ?? 0);
+  return {
+    type: 'exchange',
+    ...security,
+    date: parseTradeDate(doc, 'Ausführungstag'),
+    reference: /Ordernummer\s+([\d.]+)/.exec(doc.find(/Ordernummer/) ?? '')?.[1] ?? null,
+    quantity,
+    price: lastNumber(doc.find(/^Kurs\s+EUR\b/)) ?? grossCents / 100 / quantity,
+    grossCents,
+    taxCents,
+    gainCents: parseReportedGain(doc),
+    target: { wkn: target[1]?.toUpperCase() ?? null, isin: target[2]?.toUpperCase() ?? null },
+    targetQuantity: Math.round(quantity * factor * 1e6) / 1e6,
+  };
+}
+
+/** Vorabpauschale: Betrag und darauf einbehaltene Steuern (oft 0,00 €). */
+function parseAdvanceLumpSum(doc: Lines): ParsedAdvanceLumpSum {
+  const security = parseSecurity(doc);
+  const grossCents = required(
+    doc.cents(/^Vorabpauschale\b.*\d/) ?? doc.cents(/^Vorabpauschale\s+EUR\b/),
+    'Vorabpauschale',
+  );
+  const charged = doc.cents(/^Gesamtbetrag zu Ihren Lasten\b/);
+  return {
+    type: 'advance_lump_sum',
+    ...security,
+    date: required(
+      doc.date(
+        new RegExp(String.raw`^Zahltag\s+${DATE}`),
+        new RegExp(String.raw`^Ex-Tag\s+${DATE}`),
+        new RegExp(String.raw`Valuta\D*${DATE}`),
+      ),
+      'Zahltag',
+    ),
+    reference: null,
+    quantity: parseQuantity(doc),
+    grossCents,
+    taxCents: doc.sumCents(TAX_LINE) || (charged ?? 0),
   };
 }
 
@@ -259,7 +370,7 @@ function parseStatement(doc: Lines): ParsedStatement {
     'Stichtag',
   );
   const positions = new Map<string, ParsedStatementPosition>();
-  let current: Omit<ParsedStatementPosition, 'isin'> | null = null;
+  let current: Omit<ParsedStatementPosition, 'isin' | 'wkn'> | null = null;
 
   for (const line of doc.lines) {
     const position = POSITION_RE.exec(line);
@@ -285,8 +396,9 @@ function parseStatement(doc: Lines): ParsedStatement {
     }
     const isin = ISIN_RE.exec(line)?.[1];
     if (isin && current) {
+      const wkn = /\(([A-Z0-9]{6})\)/.exec(line.slice(line.indexOf(isin)))?.[1] ?? null;
       if (!positions.has(isin))
-        positions.set(isin, { isin, ...current, name: current.name || isin });
+        positions.set(isin, { isin, wkn, ...current, name: current.name || isin });
       current = null;
     }
   }
@@ -309,6 +421,9 @@ export function parseIngDocument(rawLines: string[]): ParsedDocument {
   const text = doc.lines.join('\n');
 
   if (/Wertpapierabrechnung/i.test(text)) {
+    if (/Wertpapierabrechnung\s+(?:zum\s+)?(?:steuerrelevanten\s+)?Umtausch/i.test(text)) {
+      return parseExchange(doc);
+    }
     const kind =
       /Wertpapierabrechnung\s+(Kauf|Verkauf)/i.exec(text) ?? /^(Kauf|Verkauf)\b/im.exec(text);
     if (kind) return parseTrade(doc, kind[1]!.toLowerCase() === 'kauf' ? 'buy' : 'sell');
@@ -319,9 +434,11 @@ export function parseIngDocument(rawLines: string[]): ParsedDocument {
   if (/Dividendengutschrift|Ertragsgutschrift|Zinsgutschrift/i.test(text))
     return parseDividend(doc);
   if (/Depotauszug|Depotübersicht|Depotbewertung/i.test(text)) return parseStatement(doc);
+  // Überschrift „Vorabpauschale“ – nicht der Hinweis auf der Steuerseite einer Verkaufsabrechnung
+  if (/^Vorabpauschale(\s+gem\.|$)/im.test(text)) return parseAdvanceLumpSum(doc);
 
   throw new DocumentParseError(
-    'Unbekannte Dokumentart. Unterstützt werden Wertpapierabrechnungen (Kauf/Verkauf), ' +
-      'Ertragsabrechnungen und Depotauszüge der ING.',
+    'Unbekannte Dokumentart. Unterstützt werden Wertpapierabrechnungen (Kauf, Verkauf, ' +
+      'Umtausch), Ertragsabrechnungen, Vorabpauschalen und Depotauszüge der ING.',
   );
 }

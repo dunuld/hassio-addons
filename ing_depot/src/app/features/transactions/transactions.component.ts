@@ -18,6 +18,9 @@ const TYPE_LABEL: Record<TransactionType, string> = {
   sell: 'Verkauf',
   dividend: 'Ertrag',
   opening: 'Startbestand',
+  exchange_out: 'Umtausch (Abgang)',
+  exchange_in: 'Umtausch (Zugang)',
+  advance_lump_sum: 'Vorabpauschale',
 };
 
 /** Alle Buchungen sowie das Erfassen eines Startbestands. */

@@ -23,6 +23,8 @@ import {
   DIVIDEND_LINES,
   SELL_LINES,
   STATEMENT_LINES,
+  advanceLines,
+  exchangeLines,
   fakePdf,
   statementLines,
   realPdf,
@@ -559,6 +561,19 @@ describe('Migration', () => {
       priceSource: 'manual',
       onlinePrices: true,
     });
+    // v4: Fremdschlüssel wieder aktiv, neue Buchungsarten erlaubt, Daten erhalten
+    expect(migrated.prepare('PRAGMA foreign_keys').get()?.['foreign_keys']).toBe(1);
+    expect(migrated.prepare('PRAGMA user_version').get()?.['user_version']).toBe(SCHEMA_VERSION);
+    migrated
+      .prepare(
+        `INSERT INTO transactions (type, date, isin, quantity, price, gross_cents, fee_cents,
+           tax_cents, total_cents, depot_id) VALUES ('advance_lump_sum', '2026-01-02',
+           'IE00B4L5Y983', 1, 0, 0, 0, 0, 0, 1)`,
+      )
+      .run();
+    expect(() =>
+      migrated.prepare('DELETE FROM securities WHERE isin = ?').run('IE00B4L5Y983'),
+    ).toThrow(/FOREIGN KEY/);
     service.storeOnlinePrice('IE00B4L5Y983', '2026-07-01', 13);
     expect(service.overview(2026).positions[0]).toMatchObject({ price: 13, priceSource: 'yahoo' });
     migrated.close();
@@ -593,5 +608,136 @@ describe('Online-Kurse (API)', () => {
     expect((await request(withPrices).get('/api/prices/status').expect(200)).body).toEqual(status);
     await request(withPrices).post('/api/prices/refresh').expect(200);
     expect(prices.run).toHaveBeenCalledOnce();
+  });
+});
+
+describe('Umtausch und Vorabpauschale (Import)', () => {
+  const NEW_ISIN = 'LU1681043599';
+  const statementWithNew = statementLines('31.03.2026', [
+    {
+      quantity: '10',
+      name: 'Neuer ETF',
+      isin: NEW_ISIN,
+      wkn: 'NEU001',
+      price: '55,00',
+      value: '550,00',
+    },
+  ]);
+  const oldBuy = tradeLines({
+    order: '7.001',
+    isin: 'LU0392494562',
+    wkn: 'ETF110',
+    name: 'Alter Welt-ETF',
+    date: '10.03.2025',
+    quantity: '10,00',
+    price: '46,00',
+    gross: '460,00',
+    fee: '0,00',
+    total: '460,00',
+  });
+
+  it('legt das nur per WKN bekannte Ziel als Platzhalter an und ordnet es später zu', async () => {
+    const res = await uploadFiles(
+      ['kauf-alt.pdf', fakePdf(oldBuy)],
+      ['umtausch.pdf', fakePdf(exchangeLines())],
+    ).expect(200);
+    expect(res.body[1]).toMatchObject({
+      status: 'imported',
+      message: 'Umtausch 10 × Alter Welt-ETF → WKN NEU001',
+      document: { type: 'exchange' },
+    });
+
+    const types = depot.listTransactions().map((t) => [t.type, t.isin]);
+    expect(types).toEqual(
+      expect.arrayContaining([
+        ['exchange_out', 'LU0392494562'],
+        ['exchange_in', 'WKN:NEU001'],
+      ]),
+    );
+    let overview = depot.overview(2026);
+    expect(overview).toMatchObject({ realizedCents: 4000, investedGrossCents: 0 });
+    expect(overview.positions[0]).toMatchObject({
+      isin: 'WKN:NEU001',
+      name: 'WKN NEU001',
+      costCents: 50000,
+      price: 50,
+    });
+    expect(overview.warnings.join(' ')).toContain('ISIN ist noch unbekannt');
+    // Platzhalter werden nicht online abgefragt
+    expect(depot.onlineSecurities().map((s) => s.isin)).toEqual(['LU0392494562']);
+
+    // Depotauszug mit ISIN und WKN → Platzhalter wird übernommen
+    await uploadFiles(['auszug.pdf', fakePdf(statementWithNew)]).expect(200);
+    overview = depot.overview(2026);
+    expect(overview.positions[0]).toMatchObject({
+      isin: NEW_ISIN,
+      name: 'Neuer ETF',
+      quantity: 10,
+      costCents: 50000,
+      price: 55,
+    });
+    expect(overview.warnings).toEqual([]);
+    expect(depot.listTransactions().some((t) => t.isin.startsWith('WKN:'))).toBe(false);
+    expect(
+      depot
+        .onlineSecurities()
+        .map((s) => s.isin)
+        .sort(),
+    ).toEqual(['LU0392494562', NEW_ISIN]);
+  });
+
+  it('nutzt eine bereits bekannte WKN direkt und erkennt Duplikate über die Ordernummer', async () => {
+    await uploadFiles(['auszug.pdf', fakePdf(statementWithNew)]).expect(200);
+    const res = await uploadFiles(
+      ['umtausch.pdf', fakePdf(exchangeLines())],
+      ['umtausch-kopie.pdf', fakePdf([...exchangeLines(), 'Seite 2 von 2'])],
+    ).expect(200);
+    expect(res.body.map((r: { status: string }) => r.status)).toEqual(['imported', 'duplicate']);
+    const incoming = depot.listTransactions().find((t) => t.type === 'exchange_in')!;
+    expect(incoming).toMatchObject({ isin: NEW_ISIN, quantity: 10, price: 50, totalCents: 50000 });
+  });
+
+  it('übernimmt eine im Dokument genannte Ziel-ISIN', async () => {
+    const note = `Ihre Anteile wurden im Verhältnis 1:2 in die ISIN ${NEW_ISIN} umgetauscht.`;
+    await uploadFiles(['umtausch.pdf', fakePdf(exchangeLines({ note }))]).expect(200);
+    const incoming = depot.listTransactions().find((t) => t.type === 'exchange_in')!;
+    expect(incoming).toMatchObject({ isin: NEW_ISIN, quantity: 20, price: 25 });
+    // Name noch unbekannt – bis ein Dokument ihn liefert
+    expect(incoming.name).toBe(NEW_ISIN);
+  });
+
+  it('importiert Vorabpauschalen', async () => {
+    const res = await uploadFiles(
+      ['vorab-0.pdf', fakePdf(advanceLines())],
+      [
+        'vorab-steuer.pdf',
+        fakePdf(
+          advanceLines({
+            isin: 'DE0002635307',
+            name: 'iShares STOXX Europe 600 UCITS ETF',
+            amount: '10,00',
+            taxes: [['Kapitalertragsteuer 25,00 %', '2,50']],
+            total: '2,50',
+            charged: true,
+          }),
+        ),
+      ],
+    ).expect(200);
+    expect(res.body.map((r: { message: string }) => r.message)).toEqual([
+      'Vorabpauschale iShs Core MSCI World U.ETF',
+      'Vorabpauschale iShares STOXX Europe 600 UCITS ETF',
+    ]);
+    expect(depot.listDocuments().map((d) => d.type)).toEqual([
+      'advance_lump_sum',
+      'advance_lump_sum',
+    ]);
+    const overview = depot.overview(2026);
+    expect(overview).toMatchObject({ advanceLumpSumCents: 1000, taxesCents: 250 });
+    // Ohne Bestand entsteht keine Position
+    expect(overview.positions).toEqual([]);
+    expect(depot.listTransactions()[0]).toMatchObject({
+      type: 'advance_lump_sum',
+      totalCents: expect.any(Number),
+    });
   });
 });

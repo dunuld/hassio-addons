@@ -74,6 +74,11 @@ const pct = (gain: number, base: number): number | null =>
 const quantityOf = (lots: Lot[]): number => lots.reduce((sum, lot) => sum + lot.quantity, 0);
 const costOf = (lots: Lot[]): number => lots.reduce((sum, lot) => sum + lot.costCents, 0);
 
+/** Buchungen, die Stücke zuführen bzw. abgeben */
+const isInflow = (tx: Transaction): boolean =>
+  tx.type === 'buy' || tx.type === 'opening' || tx.type === 'exchange_in';
+const isOutflow = (tx: Transaction): boolean => tx.type === 'sell' || tx.type === 'exchange_out';
+
 const formatQuantity = (quantity: number): string =>
   quantity.toLocaleString('de-DE', { maximumFractionDigits: 6 });
 
@@ -173,6 +178,7 @@ export function computeOverview(input: PortfolioInput): Overview {
     dividendsGrossCents: 0,
     dividendsNetCents: 0,
     taxesCents: 0,
+    advanceLumpSumCents: 0,
   };
 
   let snapshotTaken = false;
@@ -191,16 +197,21 @@ export function computeOverview(input: PortfolioInput): Overview {
     if (inYear && !snapshotTaken) takeSnapshot();
     const state = stateOf(tx.isin);
 
-    if (tx.type === 'buy' || tx.type === 'opening') {
+    if (isInflow(tx)) {
       state.lots.push({ quantity: tx.quantity, costCents: tx.totalCents });
       if (inYear) {
+        // Für den Kursgewinn seit Jahresbeginn zählt auch ein Umtausch als Zugang …
         state.buysCents += tx.totalCents;
+      }
+      // … als Investition aber nicht – es fließt kein Geld
+      if (inYear && tx.type !== 'exchange_in') {
         totals.investedGrossCents += tx.totalCents;
         totals.investedNetCents += tx.totalCents;
         totals.feesCents += tx.feeCents;
         monthOf(tx.date).investedCents += tx.totalCents;
       }
-    } else if (tx.type === 'sell') {
+    } else if (isOutflow(tx)) {
+      const exchange = tx.type === 'exchange_out';
       const proceedsCents = tx.grossCents - tx.feeCents;
       let remaining = tx.quantity;
       let costCents = 0;
@@ -223,7 +234,7 @@ export function computeOverview(input: PortfolioInput): Overview {
       const reported = tx.gainCents ?? null;
       if (remaining > EPSILON && reported === null) {
         warnings.push(
-          `Verkauf von ${nameOf(tx.isin)} am ${formatDate(tx.date)}: Für ` +
+          `${exchange ? 'Umtausch' : 'Verkauf'} von ${nameOf(tx.isin)} am ${formatDate(tx.date)}: Für ` +
             `${formatQuantity(remaining)} Stück fehlt der Kauf. Bitte ältere Kaufabrechnungen ` +
             'importieren, einen Startbestand erfassen oder einen früheren Depotauszug als ' +
             'Startpunkt wählen – der Gewinn dieser Stücke ist nicht berücksichtigt.',
@@ -235,10 +246,15 @@ export function computeOverview(input: PortfolioInput): Overview {
         state.sellsCents += Math.round(proceedsCents * covered);
         state.realizedCents += realizedCents;
         totals.realizedCents += realizedCents;
-        totals.investedNetCents -= proceedsCents;
+        if (!exchange) totals.investedNetCents -= proceedsCents;
         totals.feesCents += tx.feeCents;
         totals.taxesCents += tx.taxCents;
         monthOf(tx.date).realizedCents += realizedCents;
+      }
+    } else if (tx.type === 'advance_lump_sum') {
+      if (inYear) {
+        totals.advanceLumpSumCents += tx.grossCents;
+        totals.taxesCents += tx.taxCents;
       }
     } else if (inYear) {
       state.dividendsNetCents += tx.totalCents;
@@ -257,7 +273,12 @@ export function computeOverview(input: PortfolioInput): Overview {
     const held = quantity > EPSILON;
     const costCents = held ? costOf(state.lots) : 0;
     const price = held ? priceAt(isin, asOf) : null;
-    if (held && !price) {
+    if (held && isin.startsWith('WKN:')) {
+      warnings.push(
+        `Umtausch in ${nameOf(isin)}: Die ISIN ist noch unbekannt. Das Wertpapier wird automatisch ` +
+          'zugeordnet, sobald ein Dokument mit seiner WKN importiert wird (z. B. ein Depotauszug).',
+      );
+    } else if (held && !price) {
       warnings.push(`Für ${nameOf(isin)} ist kein Kurs bekannt – bewertet zum Einstandswert.`);
     }
     const valueCents = price ? Math.round(quantity * price.price * 100) : costCents;
@@ -320,8 +341,8 @@ export function computeOverview(input: PortfolioInput): Overview {
     let computed = start?.positions.find((p) => p.isin === row.isin)?.quantity ?? 0;
     for (const tx of relevant) {
       if (tx.isin !== row.isin || tx.date > row.date) continue;
-      if (tx.type === 'buy' || tx.type === 'opening') computed += tx.quantity;
-      else if (tx.type === 'sell') computed -= tx.quantity;
+      if (isInflow(tx)) computed += tx.quantity;
+      else if (isOutflow(tx)) computed -= tx.quantity;
     }
     if (Math.abs(computed - row.quantity) > 1e-4) {
       mismatches.push(
@@ -380,6 +401,7 @@ interface Parts {
     | 'dividendsGrossCents'
     | 'dividendsNetCents'
     | 'taxesCents'
+    | 'advanceLumpSumCents'
   >;
   exemptionCents: number;
   positions: Position[];
@@ -412,7 +434,10 @@ function summarize(parts: Parts): Overview {
     ytdGainCents,
     ytdGainPct: pct(ytdGainCents, ytdBaseCents),
     exemptionCents: parts.exemptionCents,
-    exemptionUsedCents: Math.max(0, totals.dividendsGrossCents + totals.realizedCents),
+    exemptionUsedCents: Math.max(
+      0,
+      totals.dividendsGrossCents + totals.realizedCents + totals.advanceLumpSumCents,
+    ),
     positions: parts.positions,
     monthly: parts.monthly,
     warnings: [...new Set(parts.warnings)],
@@ -447,6 +472,7 @@ export function mergeOverviews(
     'dividendsGrossCents',
     'dividendsNetCents',
     'taxesCents',
+    'advanceLumpSumCents',
   ] as const;
   const totals = Object.fromEntries(
     keys.map((key) => [key, overviews.reduce((sum, o) => sum + o[key], 0)]),

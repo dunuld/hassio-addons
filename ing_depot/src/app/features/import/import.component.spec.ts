@@ -71,6 +71,15 @@ describe('ImportComponent', () => {
     expect(el.querySelector('tbody a')?.getAttribute('href')).toBe('api/documents/7/file');
   });
 
+  it('benennt Umtausch und Vorabpauschale', () => {
+    const { text } = render([
+      { ...document, id: 8, type: 'exchange', summary: 'Umtausch 10 × Alt → WKN NEU001' },
+      { ...document, id: 9, type: 'advance_lump_sum', summary: 'Vorabpauschale World' },
+    ]);
+    expect(text()).toContain(sq('Umtausch Depot 1234567890 Umtausch 10 × Alt → WKN NEU001'));
+    expect(text()).toContain(sq('Vorabpauschale Depot 1234567890 Vorabpauschale World'));
+  });
+
   it('zeigt einen Hinweis ohne Dokumente', () => {
     const { text } = render([]);
     expect(text()).toContain(sq('Noch keine Dokumente importiert'));

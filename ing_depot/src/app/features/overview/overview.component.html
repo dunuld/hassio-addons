@@ -75,6 +75,9 @@
 
     <p class="footnote">
       Steuern {{ o.year }}: {{ euro(o.taxesCents) }} · Gebühren: {{ euro(o.feesCents) }}
+      @if (o.advanceLumpSumCents > 0) {
+        · Vorabpauschalen: {{ euro(o.advanceLumpSumCents) }}
+      }
       @if (o.exemptionCents > 0) {
         · Freistellungsauftrag: {{ euro(o.exemptionUsedCents) }} von
         {{ euro(o.exemptionCents) }} rechnerisch genutzt

@@ -37,12 +37,14 @@ geöffnet.
 
 Unterstützt werden diese Dokumente aus der ING-Postbox:
 
-| Dokument                                    | Verwendung                                                |
-| ------------------------------------------- | --------------------------------------------------------- |
-| Wertpapierabrechnung Kauf (auch Sparplan)   | Investition, Einstandswert, Kurs                          |
-| Wertpapierabrechnung Verkauf                | Realisierter Gewinn (laut Bank), Gebühren, Steuern        |
-| Ertragsabrechnung (Dividende, Ausschüttung) | Dividenden brutto/netto, Steuern                          |
-| Depotauszug / Jahresdepotauszug             | Kurse zum Stichtag, Kontrolle der Stückzahlen, Startpunkt |
+| Dokument                                           | Verwendung                                                                   |
+| -------------------------------------------------- | ---------------------------------------------------------------------------- |
+| Wertpapierabrechnung Kauf (auch Sparplan)          | Investition, Einstandswert, Kurs                                             |
+| Wertpapierabrechnung Verkauf                       | Realisierter Gewinn (laut Bank), Gebühren, Steuern                           |
+| Wertpapierabrechnung zum steuerrelevanten Umtausch | Abgang des alten und Zugang des neuen Wertpapiers (z. B. Fondsverschmelzung) |
+| Vorabpauschale                                     | Steuern, Nutzung des Freistellungsauftrags                                   |
+| Ertragsabrechnung (Dividende, Ausschüttung)        | Dividenden brutto/netto, Steuern                                             |
+| Depotauszug / Jahresdepotauszug                    | Kurse zum Stichtag, Kontrolle der Stückzahlen, Startpunkt                    |
 
 Es gibt zwei Wege:
 
@@ -53,6 +55,18 @@ Es gibt zwei Wege:
 
 Jedes Dokument wird nur einmal importiert – erkannt an der Datei und an der Ordernummer bzw. dem
 Inhalt. Löschst du ein Dokument, verschwinden auch seine Buchungen.
+
+### Umtausch und Vorabpauschale
+
+- **Umtausch** (z. B. Fondsverschmelzung): Das alte Wertpapier geht zum Kurswert ab – der
+  Veräußerungsgewinn der Bank zählt als realisierter Gewinn –, das neue kommt mit demselben Wert als
+  Einstandswert hinzu. Es fließt kein Geld, daher zählt der Umtausch nicht als Investition.
+  Nennt die Abrechnung das neue Wertpapier nur mit WKN, erscheint es vorläufig als „WKN …“ und wird
+  automatisch zugeordnet, sobald ein Dokument mit dieser WKN importiert wird (z. B. ein
+  Depotauszug).
+- **Vorabpauschale**: Sie wird bei thesaurierenden Fonds jährlich versteuert, ohne dass etwas
+  ausgezahlt wird. Das Add-on zählt sie nicht als Dividende, sondern zu den Steuern und zur Nutzung
+  des Freistellungsauftrags; die Übersicht nennt die Summe des Jahres in der Fußzeile.
 
 ### Mehrere Depots
 
@@ -164,8 +178,9 @@ Home Assistant erscheinen sie erst mit der nächsten Aktualisierung wieder.
 
 ## Grenzen
 
-- Aktiensplits, Spin-offs, Fusionen, Ein- und Auslieferungen sowie Vorabpauschalen werden nicht
-  ausgewertet.
+- Aktiensplits, Spin-offs, Ein- und Auslieferungen werden nicht ausgewertet. Fondsverschmelzungen
+  werden nur erkannt, wenn die ING sie als „Wertpapierabrechnung zum steuerrelevanten Umtausch“
+  abrechnet.
 - Beträge werden in Euro geführt; Fremdwährungsdividenden mit dem umgerechneten Betrag der
   Abrechnung.
 - Die Übersicht ersetzt keine Steuerbescheinigung.
