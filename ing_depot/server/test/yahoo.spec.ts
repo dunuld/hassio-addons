@@ -227,3 +227,65 @@ describe('YahooClient.closeOn', () => {
     expect(await client.closeOn('SPAET', '2025-12-31')).toBeNull();
   });
 });
+
+describe('YahooClient.dividends', () => {
+  const dividends = (currency: string, events: [string, unknown][]) => ({
+    chart: {
+      result: [
+        {
+          meta: { currency },
+          events: {
+            dividends: Object.fromEntries(
+              events.map(([iso, amount], i) => [String(i), { date: day(iso), amount }]),
+            ),
+          },
+        },
+      ],
+    },
+  });
+
+  it('liefert Ex-Tag und Betrag je Stück, sortiert und auf den Zeitraum begrenzt', async () => {
+    const { fn, calls } = fakeFetch({
+      '/chart/EXH1.DE': () =>
+        json(
+          dividends('EUR', [
+            ['2026-04-15', 0.402724],
+            ['2026-01-15', 0.397814],
+            ['2024-12-01', 0.5], // vor dem Zeitraum
+            ['2026-02-01', 0], // ungültig
+            ['2026-03-01', 'x'],
+          ]),
+        ),
+    });
+    expect(
+      await new YahooClient({ fetchFn: fn }).dividends('EXH1.DE', '2025-06-01', '2026-06-01'),
+    ).toEqual([
+      { exDate: '2026-01-15', amount: 0.397814, currency: 'EUR' },
+      { exDate: '2026-04-15', amount: 0.402724, currency: 'EUR' },
+    ]);
+    expect(calls[0]).toContain('&events=div');
+  });
+
+  it('rechnet Fremdwährungen genau und Pence über GBP um', async () => {
+    const { fn } = fakeFetch({
+      '/chart/USDEUR%3DX': () => json(chartLatest(0.9142, 'EUR')),
+      '/chart/GBPEUR%3DX': () => json(chartLatest(1.2, 'EUR')),
+      '/chart/MSFT': () => json(dividends('USD', [['2026-05-21', 0.91]])),
+      '/chart/VUSA.L': () => json(dividends('GBp', [['2026-05-21', 25]])),
+    });
+    const client = new YahooClient({ fetchFn: fn });
+    expect(await client.dividends('MSFT', '2026-01-01', '2026-12-31')).toEqual([
+      { exDate: '2026-05-21', amount: 0.831922, currency: 'USD' },
+    ]);
+    expect((await client.dividends('VUSA.L', '2026-01-01', '2026-12-31'))![0]!.amount).toBe(0.3);
+  });
+
+  it('liefert null für unbekannte Kürzel und eine leere Liste ohne Ausschüttungen', async () => {
+    const { fn } = fakeFetch({
+      '/chart/ACC.DE': () => json({ chart: { result: [{ meta: {} }] } }),
+    });
+    const client = new YahooClient({ fetchFn: fn });
+    expect(await client.dividends('GIBTSNICHT', '2026-01-01', '2026-12-31')).toBeNull();
+    expect(await client.dividends('ACC.DE', '2026-01-01', '2026-12-31')).toEqual([]);
+  });
+});

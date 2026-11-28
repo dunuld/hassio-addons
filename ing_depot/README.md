@@ -18,6 +18,7 @@ Das Add-on liest die PDFs deines ING-Depots und zeigt je Kalenderjahr (ab 01.01.
 - **Depotauszug als Startpunkt**, wenn ältere Abrechnungen fehlen
 - **Kursgewinn** je Position und gesamt, in Euro und Prozent – seit Kauf und seit Jahresbeginn
 - **PDF-Import** per Upload oder automatisch aus einem Eingangsordner, mit Duplikaterkennung
+- **Dividendenkalender** mit gezahlten und erwarteten Dividenden je Monat
 - **Online-Kurse** von Yahoo Finance, täglich oder laufend während der Handelszeit
 - **Sensoren** für Home-Assistant-Dashboards und Automationen
 - **Lokal & privat**: Alle Daten bleiben auf deinem Home-Assistant-System

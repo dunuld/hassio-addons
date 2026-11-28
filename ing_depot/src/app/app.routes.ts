@@ -3,6 +3,10 @@ import { Routes } from '@angular/router';
 export const routes: Routes = [
   { path: '', loadComponent: () => import('./features/overview/overview.component') },
   {
+    path: 'dividenden',
+    loadComponent: () => import('./features/dividends/dividends.component'),
+  },
+  {
     path: 'buchungen',
     loadComponent: () => import('./features/transactions/transactions.component'),
   },

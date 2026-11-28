@@ -135,6 +135,11 @@ export function depotRouter(
     res.status(204).end();
   });
 
+  // ---- Dividendenkalender ----
+  router.get('/dividends', (req, res) => {
+    res.json(depot.dividendCalendar(parseYear(req.query['year']), parseDepot(req.query['depot'])));
+  });
+
   // ---- Online-Kurse ----
   router.get('/prices/status', (_req, res) => {
     res.json(prices?.status() ?? PRICES_OFF);

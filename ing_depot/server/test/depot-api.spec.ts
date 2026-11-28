@@ -14,13 +14,20 @@ import request from 'supertest';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createApp } from '../src/app.js';
 import { openDatabase, SCHEMA_VERSION, transaction, type Database } from '../src/db/database.js';
-import { DepotService, isValidDate, localToday, normalizeFileName } from '../src/depot.service.js';
+import {
+  DepotService,
+  isValidDate,
+  localToday,
+  normalizeFileName,
+  shiftDate,
+} from '../src/depot.service.js';
 import { FAILED_DIR, IMPORTED_DIR, scanInbox } from '../src/inbox.js';
 import {
   BUY_LINES,
   DEPOT_A,
   DEPOT_B,
   DIVIDEND_LINES,
+  EUR_DIVIDEND_LINES,
   SELL_LINES,
   STATEMENT_LINES,
   advanceLines,
@@ -739,5 +746,127 @@ describe('Umtausch und Vorabpauschale (Import)', () => {
       type: 'advance_lump_sum',
       totalCents: expect.any(Number),
     });
+  });
+});
+
+describe('Dividendenkalender', () => {
+  const WORLD = 'IE00B4L5Y983';
+  const worldDividend = (zahltag: string) =>
+    EUR_DIVIDEND_LINES.map((line) =>
+      line
+        .replace('ISIN (WKN) DE0008404005 (840400)', `ISIN (WKN) ${WORLD} (A0RPWH)`)
+        .replace(
+          'Wertpapierbezeichnung Allianz SE',
+          'Wertpapierbezeichnung iShs Core MSCI World U.ETF',
+        )
+        .replace('Zahltag 12.05.2026', `Zahltag ${zahltag}`),
+    );
+
+  beforeEach(async () => {
+    await uploadFiles(
+      ['kauf.pdf', fakePdf(BUY_LINES)],
+      ['dividende-usd.pdf', fakePdf(DIVIDEND_LINES)],
+      ['dividende-eur.pdf', fakePdf(EUR_DIVIDEND_LINES)],
+    ).expect(200);
+    depot.replaceDividendEvents(
+      WORLD,
+      '2025-05-27',
+      '2026-07-01',
+      [
+        { exDate: '2025-06-20', amount: 9, currency: 'EUR' }, // älter als 12 Monate
+        { exDate: '2025-09-10', amount: 0.5, currency: 'EUR' },
+        { exDate: '2025-12-10', amount: 0.6, currency: 'USD' },
+        { exDate: '2026-06-10', amount: 0.4, currency: 'EUR' },
+      ],
+      '2026-07-01T20:30:00.000Z',
+    );
+  });
+
+  it('zeigt gezahlte, ausstehende und erwartete Dividenden je Monat', async () => {
+    const { body } = await request(app).get('/api/dividends').expect(200);
+    expect(body).toMatchObject({
+      year: 2026,
+      depotId: null,
+      isCurrentYear: true,
+      paidGrossCents: 7700 + 915,
+      paidNetCents: 5670 + 778,
+      // 3 Stück × (0,40 ausstehend + 0,50 + 0,60 erwartet)
+      expectedGrossCents: 120 + 150 + 180,
+      withoutHistory: [],
+    });
+    const month = (m: number) => body.months[m - 1];
+    expect(month(5)).toMatchObject({ paidGrossCents: 7700, expectedGrossCents: 0 });
+    expect(month(6).entries).toEqual([
+      expect.objectContaining({
+        date: '2026-06-10',
+        status: 'pending',
+        perShare: 0.4,
+        grossCents: 120,
+        netCents: null,
+      }),
+      expect.objectContaining({
+        date: '2026-06-12',
+        status: 'paid',
+        isin: 'US5949181045',
+        grossCents: 915,
+        netCents: 778,
+      }),
+    ]);
+    expect(month(9).entries).toEqual([
+      expect.objectContaining({
+        date: '2026-09-10',
+        status: 'expected',
+        quantity: 3,
+        grossCents: 150,
+      }),
+    ]);
+    expect(month(12).entries).toEqual([
+      expect.objectContaining({ date: '2026-12-10', grossCents: 180 }),
+    ]);
+    // Die Zahlung vom Juni 2025 liegt vor dem 12-Monats-Fenster
+    expect(month(6).expectedGrossCents).toBe(120);
+  });
+
+  it('erkennt die Gutschrift zu einem ausstehenden Ex-Tag', async () => {
+    await uploadFiles(['world.pdf', fakePdf(worldDividend('20.06.2026'))]).expect(200);
+    const calendar = depot.dividendCalendar(2026);
+    expect(calendar.months[5]!.entries.map((e) => e.status)).toEqual(['paid', 'paid']);
+  });
+
+  it('nennt gehaltene Wertpapiere ohne Dividendenhistorie', () => {
+    depot.addOpening({
+      depotNumber: '1234567890',
+      isin: 'DE0007236101',
+      name: 'Siemens AG',
+      date: '2025-01-10',
+      quantity: 2,
+      costCents: 40000,
+    });
+    depot.updateSecurity(WORLD, { onlinePrices: false });
+    expect(depot.dividendCalendar(2026)).toMatchObject({
+      withoutHistory: ['iShs Core MSCI World U.ETF', 'Siemens AG'],
+      expectedGrossCents: 0,
+    });
+  });
+
+  it('zeigt für vergangene Jahre nur gezahlte Dividenden und filtert nach Depot', async () => {
+    const past = (await request(app).get('/api/dividends?year=2025').expect(200)).body;
+    expect(past).toMatchObject({
+      year: 2025,
+      isCurrentYear: false,
+      paidGrossCents: 0,
+      expectedGrossCents: 0,
+    });
+    expect(past.years).toEqual([2026]);
+    const [only] = depot.listDepots();
+    const filtered = (await request(app).get(`/api/dividends?depot=${only!.id}`).expect(200)).body;
+    expect(filtered).toMatchObject({ depotId: only!.id, paidGrossCents: 8615 });
+    await request(app).get('/api/dividends?year=abc').expect(400);
+  });
+
+  it('verschiebt Ex-Tage um Jahre und Tage', () => {
+    expect(shiftDate('2025-02-28', { years: 1 })).toBe('2026-02-28');
+    expect(shiftDate('2024-02-29', { years: 1 })).toBe('2025-03-01');
+    expect(shiftDate('2026-07-01', { days: -365 })).toBe('2025-07-01');
   });
 });

@@ -6,7 +6,7 @@ import { DatabaseSync } from 'node:sqlite';
 export type Database = DatabaseSync;
 export type Row = Record<string, unknown>;
 
-export const SCHEMA_VERSION = 4;
+export const SCHEMA_VERSION = 5;
 
 const schemaSql = (): string => readFileSync(new URL('./schema.sql', import.meta.url), 'utf8');
 
@@ -116,6 +116,20 @@ const MIGRATION_4 = `
   CREATE INDEX transactions_depot ON transactions (depot_id);
 `;
 
+/** v5: Dividendenhistorie je Wertpapier (Yahoo Finance) für den Dividendenkalender. */
+const MIGRATION_5 = `
+  CREATE TABLE dividend_events (
+    isin     TEXT NOT NULL REFERENCES securities (isin) ON DELETE CASCADE,
+    ex_date  TEXT NOT NULL,
+    -- Betrag je Stück in EUR (Fremdwährung umgerechnet)
+    amount   REAL NOT NULL,
+    currency TEXT NOT NULL,
+    PRIMARY KEY (isin, ex_date)
+  );
+  -- Zeitpunkt des letzten Abrufs der Dividendenhistorie (NULL = nie)
+  ALTER TABLE securities ADD COLUMN dividends_fetched_at TEXT;
+`;
+
 /** Öffnet (oder erstellt) die Datenbank und wendet das Schema an. `:memory:` für Tests. */
 export function openDatabase(file: string): Database {
   if (file !== ':memory:') mkdirSync(dirname(file), { recursive: true });
@@ -150,6 +164,7 @@ function migrate(db: Database): void {
       if (version < 2) db.exec(MIGRATION_2);
       if (version < 3) db.exec(MIGRATION_3);
       if (version < 4) db.exec(MIGRATION_4);
+      if (version < 5) db.exec(MIGRATION_5);
       // Künftige Migrationen: if (version < 5) { ... }
       const broken = db.prepare('PRAGMA foreign_key_check').all();
       if (broken.length > 0) {

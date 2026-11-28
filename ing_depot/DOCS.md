@@ -130,6 +130,23 @@ Der aktuelle Kurs einer Position stammt aus der jeweils jüngsten Quelle:
 Liegen für einen Tag mehrere Kurse vor, gilt die Reihenfolge der Liste – ein manueller Kurs
 schlägt alle anderen desselben Tages.
 
+### Dividendenkalender
+
+Der Reiter **Dividenden** zeigt für ein Jahr alle Dividenden je Monat, mit Depot- und Jahresauswahl:
+
+- **Gezahlt**: aus den importierten Ertragsgutschriften, brutto und netto. Ausschüttungen ohne
+  importierte Gutschrift fehlen hier.
+- **Ausstehend** (nur laufendes Jahr): Der Ex-Tag lag in den letzten 60 Tagen, die Gutschrift ist
+  aber noch nicht importiert.
+- **Erwartet** (nur laufendes Jahr, bis Dezember): eine Hochrechnung. Jede Ausschüttung der
+  letzten 12 Monate laut Yahoo Finance wird ein Jahr später mit dem aktuellen Bestand erwartet –
+  brutto vor Steuern, Datum ist der voraussichtliche Ex-Tag, Fremdwährungen zum aktuellen
+  Devisenkurs. Angekündigte Erhöhungen oder Kürzungen sind darin nicht enthalten.
+
+Die Dividendenhistorie holt der Online-Kursabruf (siehe unten) höchstens einmal am Tag je
+Wertpapier, auch über „Kurse jetzt aktualisieren“. Für Wertpapiere ohne Yahoo-Kürzel oder mit
+abgeschaltetem Online-Abruf gibt es keine erwarteten Dividenden.
+
 ### Online-Kurse
 
 Das Add-on ruft die Kurse aller gehaltenen Wertpapiere bei **Yahoo Finance** ab – je nach

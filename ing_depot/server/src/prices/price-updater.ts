@@ -1,5 +1,5 @@
 import type { PriceUpdateMode, PriceUpdateStatus } from '../../../shared/api-types.js';
-import type { DepotService } from '../depot.service.js';
+import { shiftDate, type DepotService } from '../depot.service.js';
 import type { YahooClient } from './yahoo.js';
 
 /** Börsenschluss für den täglichen Abruf (deutsche Zeit, nach Ende des Xetra-/Tradegate-Handels) */
@@ -10,6 +10,10 @@ const INTRADAY_TO = DAILY_AT;
 const MAX_ERRORS = 20;
 /** Ein Kurs bis zu so vielen Tagen vor dem 31.12. gilt als Jahresschlusskurs (Feiertage) */
 const YEAR_END_WINDOW_DAYS = 10;
+/** Dividendenhistorie je Wertpapier höchstens so oft neu abrufen */
+const DIVIDEND_REFRESH_MS = 20 * 60 * 60 * 1000;
+/** Zeitraum der abgerufenen Dividendenhistorie (Tage zurück) */
+const DIVIDEND_HISTORY_DAYS = 400;
 
 const BERLIN = new Intl.DateTimeFormat('en-GB', {
   timeZone: 'Europe/Berlin',
@@ -206,8 +210,45 @@ export class PriceUpdater {
       }
     }
 
+    await this.refreshDividends(today, held, symbolFor, fail);
     updated += await this.fillYearEnds(year, current.years, online, symbolFor, fail);
     return updated;
+  }
+
+  /**
+   * Holt die Dividendenhistorie (Ex-Tag, Betrag je Stück) der gehaltenen Wertpapiere für den
+   * Dividendenkalender – je Wertpapier höchstens einmal in 20 Stunden.
+   */
+  private async refreshDividends(
+    today: string,
+    held: { isin: string; name: string }[],
+    symbolFor: (isin: string) => Promise<string | null>,
+    fail: (message: string) => void,
+  ): Promise<void> {
+    const staleBefore = new Date(this.now().getTime() - DIVIDEND_REFRESH_MS).toISOString();
+    const from = shiftDate(today, { days: -DIVIDEND_HISTORY_DAYS });
+    for (const position of held) {
+      const last = this.depot.dividendsFetchedAt(position.isin);
+      if (last && last > staleBefore) continue;
+      try {
+        const symbol = await symbolFor(position.isin);
+        if (!symbol) continue;
+        const events = await this.yahoo.dividends(symbol, from, today);
+        await this.pause();
+        // Unbekanntes Kürzel wurde beim Kursabruf bereits gemeldet
+        if (events === null) continue;
+        this.depot.replaceDividendEvents(
+          position.isin,
+          from,
+          today,
+          events,
+          this.now().toISOString(),
+        );
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        fail(`${position.name}: Dividenden – ${message}`);
+      }
+    }
   }
 
   /**

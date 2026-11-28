@@ -31,6 +31,7 @@ describe('App', () => {
     const links = compiled.querySelectorAll('nav a');
     expect([...links].map((link) => link.textContent)).toEqual([
       'Übersicht',
+      'Dividenden',
       'Buchungen',
       'Depots',
       'Import',
