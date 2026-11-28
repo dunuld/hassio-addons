@@ -93,7 +93,9 @@ Wege:
   Wertpapiere von Hand eintragen.
 
 Die Übersicht weist darauf hin, wenn Käufe fehlen oder der Bestand vom jüngsten Depotauszug
-abweicht.
+abweicht. Bei Depots mit Startpunkt entfallen diese Hinweise auf Lücken in der Historie; bestehen
+bleiben nur Hinweise zum Startpunkt selbst (Position ohne Kurswert) und zu Umtauschzielen, deren
+ISIN noch unbekannt ist.
 
 ### Kennzahlen
 

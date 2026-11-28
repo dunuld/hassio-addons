@@ -113,6 +113,13 @@ export function computeOverview(input: PortfolioInput): Overview {
   const periodStart = startInYear ? start.date : yearStart;
   const asOf = year < currentYear ? `${year}-12-31` : input.today;
   const warnings: string[] = [];
+  /**
+   * Hinweise auf Lücken in der Historie (fehlende Käufe, Kurse, Abweichungen zum Auszug). Mit
+   * Startpunkt hat der Nutzer bewusst ab einem Depotauszug begonnen – dann entfallen sie.
+   */
+  const gapWarning = (message: string): void => {
+    if (!start) warnings.push(message);
+  };
 
   const names = new Map(input.securities.map((s) => [s.isin, s]));
   const nameOf = (isin: string): string => names.get(isin)?.name ?? isin;
@@ -233,7 +240,7 @@ export function computeOverview(input: PortfolioInput): Overview {
       // Die Bank kennt die vollständige Kaufhistorie – ihr Ergebnis hat Vorrang vor FIFO
       const reported = tx.gainCents ?? null;
       if (remaining > EPSILON && reported === null) {
-        warnings.push(
+        gapWarning(
           `${exchange ? 'Umtausch' : 'Verkauf'} von ${nameOf(tx.isin)} am ${formatDate(tx.date)}: Für ` +
             `${formatQuantity(remaining)} Stück fehlt der Kauf. Bitte ältere Kaufabrechnungen ` +
             'importieren, einen Startbestand erfassen oder einen früheren Depotauszug als ' +
@@ -279,7 +286,7 @@ export function computeOverview(input: PortfolioInput): Overview {
           'zugeordnet, sobald ein Dokument mit seiner WKN importiert wird (z. B. ein Depotauszug).',
       );
     } else if (held && !price) {
-      warnings.push(`Für ${nameOf(isin)} ist kein Kurs bekannt – bewertet zum Einstandswert.`);
+      gapWarning(`Für ${nameOf(isin)} ist kein Kurs bekannt – bewertet zum Einstandswert.`);
     }
     const valueCents = price ? Math.round(quantity * price.price * 100) : costCents;
 
@@ -291,7 +298,7 @@ export function computeOverview(input: PortfolioInput): Overview {
       } else {
         startValueCents = state.startCostCents;
         if (!startInYear) {
-          warnings.push(
+          gapWarning(
             `Für ${nameOf(isin)} fehlt ein Kurs zum ${formatDate(previousEnd)} – der Kursgewinn ` +
               'seit Jahresbeginn rechnet ersatzweise mit dem Einstandswert. Der ' +
               'Jahresdepotauszug liefert diesen Kurs.',
@@ -354,7 +361,7 @@ export function computeOverview(input: PortfolioInput): Overview {
   if (mismatches.length > 0) {
     const shown = mismatches.slice(0, 3).join(', ');
     const more = mismatches.length > 3 ? ` und ${mismatches.length - 3} weitere` : '';
-    warnings.push(
+    gapWarning(
       `Depotauszug vom ${formatDate(checkDate!)}: Der Bestand passt bei ` +
         `${mismatches.length === 1 ? 'einem Wertpapier' : `${mismatches.length} Wertpapieren`} ` +
         `nicht zu den Abrechnungen – ${shown}${more}. Es fehlen Abrechnungen oder ein ` +
