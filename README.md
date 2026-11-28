@@ -40,7 +40,7 @@ _Arbeitszeiterfassung mit Kommen/Gehen, Home Office, Arbeitspaketen in 0,25-h-Sc
 ### [ING Depot](./ing_depot)
 
 ![Version][ing-depot-version-badge]
-![Stage][experimental-badge]
+[![GitHub Release][ing-depot-release-badge]][ing-depot-releases]
 ![amd64][amd64-badge]
 ![aarch64][aarch64-badge]
 
@@ -101,6 +101,8 @@ Dieses Projekt steht unter der [MIT-Lizenz](LICENSE).
 [budget-tracker-releases]: https://github.com/dunuld/hassio-addons/releases?q=budget_tracker-v&expanded=true
 [time-tracker-version-badge]: https://img.shields.io/badge/dynamic/yaml?label=Version&query=%24.version&url=https%3A%2F%2Fraw.githubusercontent.com%2Fdunuld%2Fhassio-addons%2Fmain%2Ftime_tracker%2Fconfig.yaml
 [ing-depot-version-badge]: https://img.shields.io/badge/dynamic/yaml?label=Version&query=%24.version&url=https%3A%2F%2Fraw.githubusercontent.com%2Fdunuld%2Fhassio-addons%2Fmain%2Fing_depot%2Fconfig.yaml
+[ing-depot-release-badge]: https://img.shields.io/github/v/release/dunuld/hassio-addons?filter=ing_depot-v*&label=Release
+[ing-depot-releases]: https://github.com/dunuld/hassio-addons/releases?q=ing_depot-v&expanded=true
 [new-addon-version-badge]: https://img.shields.io/badge/dynamic/yaml?label=Version&query=%24.version&url=https%3A%2F%2Fraw.githubusercontent.com%2Fdunuld%2Fhassio-addons%2Fmain%2Fnew_addon%2Fconfig.yaml
 [experimental-badge]: https://img.shields.io/badge/stage-experimental-orange
 [amd64-badge]: https://img.shields.io/badge/amd64-yes-green
