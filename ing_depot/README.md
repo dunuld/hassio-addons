@@ -3,7 +3,7 @@
 _Depotübersicht aus ING-PDFs – Abrechnungen, Ertragsabrechnungen und Depotauszüge._
 
 ![Version][version-badge]
-![Stage][stage-badge]
+[![GitHub Release][release-badge]][releases]
 ![amd64][amd64-badge]
 ![aarch64][aarch64-badge]
 ![Ingress][ingress-badge]
@@ -26,7 +26,8 @@ Alle Details zu Installation, Konfiguration und Nutzung findest du im Tab **Doku
 bzw. in der [DOCS.md](DOCS.md).
 
 [version-badge]: https://img.shields.io/badge/dynamic/yaml?label=Version&query=%24.version&url=https%3A%2F%2Fraw.githubusercontent.com%2Fdunuld%2Fhassio-addons%2Fmain%2Fing_depot%2Fconfig.yaml
-[stage-badge]: https://img.shields.io/badge/stage-experimental-orange
+[release-badge]: https://img.shields.io/github/v/release/dunuld/hassio-addons?filter=ing_depot-v*&label=Release
+[releases]: https://github.com/dunuld/hassio-addons/releases?q=ing_depot-v&expanded=true
 [amd64-badge]: https://img.shields.io/badge/amd64-yes-green
 [aarch64-badge]: https://img.shields.io/badge/aarch64-yes-green
 [ingress-badge]: https://img.shields.io/badge/ingress-yes-green

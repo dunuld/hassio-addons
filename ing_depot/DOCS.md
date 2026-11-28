@@ -14,7 +14,6 @@ Beträge, realisierte Gewinne, ausgezahlte Dividenden und Kursgewinne.
 1. Das Repository `https://github.com/dunuld/hassio-addons` im Add-on Store hinzufügen
    (**Einstellungen → Add-ons → Add-on Store → ⋮ → Repositories**).
 2. Im Add-on Store nach **ING Depot** suchen und auf **Installieren** klicken.
-   Da das Add-on als _experimentell_ markiert ist, wird es nur im erweiterten Modus angezeigt.
 3. Das Add-on **starten**.
 4. Optional **In Seitenleiste anzeigen** aktivieren.
 5. Über **Benutzeroberfläche öffnen** oder das Panel in der Seitenleiste starten.
