@@ -1,0 +1,109 @@
+<div class="page-head">
+  <h2>Buchungen</h2>
+  <div class="filters">
+    <app-depot-select />
+    <label class="year-select">
+      Jahr
+      <select #yearSelect (change)="selectYear(yearSelect.value)">
+        <option value="">Alle</option>
+        @for (y of years(); track y) {
+          <option [value]="y">{{ y }}</option>
+        }
+      </select>
+    </label>
+  </div>
+</div>
+
+@if (error()) {
+  <p class="alert error" role="alert">{{ error() }}</p>
+}
+
+<div class="app-card table-scroll">
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>Datum</th>
+        <th>Art</th>
+        <th>Wertpapier</th>
+        @if (selection.multiple()) {
+          <th>Depot</th>
+        }
+        <th class="num">Stück</th>
+        <th class="num">Kurs</th>
+        <th class="num">Gebühren</th>
+        <th class="num">Steuern</th>
+        <th class="num">Betrag</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      @for (t of visible(); track t.id) {
+        <tr>
+          <td>{{ date(t.date) }}</td>
+          <td>{{ typeLabel(t.type) }}</td>
+          <td>
+            {{ t.name }}
+            <div class="muted">{{ t.isin }}</div>
+          </td>
+          @if (selection.multiple()) {
+            <td>{{ selection.nameOf(t.depotId) }}</td>
+          }
+          <td class="num">{{ quantity(t.quantity) }}</td>
+          <td class="num">{{ t.price > 0 ? price(t.price) : '–' }}</td>
+          <td class="num">{{ euro(t.feeCents) }}</td>
+          <td class="num">{{ euro(t.taxCents) }}</td>
+          <td class="num">{{ euro(t.totalCents) }}</td>
+          <td class="actions">
+            @if (t.documentId !== null) {
+              <a [href]="documentUrl(t.documentId)" target="_blank" rel="noopener">PDF</a>
+            } @else {
+              <button type="button" class="btn small danger" (click)="remove(t)">Löschen</button>
+            }
+          </td>
+        </tr>
+      } @empty {
+        <tr>
+          <td colspan="10" class="muted">Keine Buchungen vorhanden.</td>
+        </tr>
+      }
+    </tbody>
+  </table>
+</div>
+
+<h3>Startbestand erfassen</h3>
+<div class="app-card">
+  <p class="muted">
+    Für Wertpapiere, deren Kaufabrechnung du nicht mehr hast: Stückzahl und gesamten Einstandswert
+    eintragen. Alternativ kannst du unter „Depots“ einen Depotauszug als Startpunkt wählen.
+  </p>
+  <form class="inline-form" (ngSubmit)="addOpening()">
+    <label>
+      Depotnummer
+      <input
+        name="depotNumber"
+        [(ngModel)]="form.depotNumber"
+        [placeholder]="defaultDepotNumber()"
+        list="depot-numbers"
+        inputmode="numeric"
+      />
+      <datalist id="depot-numbers">
+        @for (d of selection.depots(); track d.id) {
+          @if (d.number) {
+            <option [value]="d.number">{{ d.displayName }}</option>
+          }
+        }
+      </datalist>
+    </label>
+    <label>ISIN <input name="isin" [(ngModel)]="form.isin" placeholder="IE00B4L5Y983" /></label>
+    <label>Name <input name="name" [(ngModel)]="form.name" /></label>
+    <label>Kaufdatum <input name="date" type="date" [(ngModel)]="form.date" /></label>
+    <label>Stück <input name="quantity" [(ngModel)]="form.quantity" inputmode="decimal" /></label>
+    <label
+      >Einstandswert (€) <input name="cost" [(ngModel)]="form.cost" inputmode="decimal"
+    /></label>
+    <button type="submit" class="btn primary">Hinzufügen</button>
+    @if (formError()) {
+      <span class="form-error" role="alert">{{ formError() }}</span>
+    }
+  </form>
+</div>

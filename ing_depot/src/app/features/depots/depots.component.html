@@ -1,0 +1,55 @@
+<h2>Depots</h2>
+
+<p class="muted">
+  Depots werden anhand der Depotnummer in den importierten Dokumenten erkannt. Wähle einen
+  Depotauszug als <strong>Startpunkt</strong>, wenn ältere Abrechnungen fehlen: Ab dessen Stichtag
+  wird gerechnet, die Bestände des Auszugs gehen mit ihrem Kurswert als Einstandswert ein. Ältere
+  Buchungen des Depots bleiben gespeichert, fließen aber nicht in die Auswertung ein.
+</p>
+
+@if (error() ?? selection.error(); as message) {
+  <p class="alert error" role="alert">{{ message }}</p>
+}
+
+@for (d of selection.depots(); track d.id) {
+  <section class="app-card">
+    <h3>{{ d.displayName }}</h3>
+    <p class="muted">
+      {{ d.number ? 'Depotnummer ' + d.number : 'Dokumente ohne erkennbare Depotnummer' }} ·
+      {{ d.documentCount }} {{ d.documentCount === 1 ? 'Dokument' : 'Dokumente' }}
+    </p>
+    <div class="inline-form">
+      <label>
+        Bezeichnung
+        <input
+          #label
+          [value]="d.label ?? ''"
+          placeholder="z. B. Gemeinschaftsdepot"
+          maxlength="60"
+          (change)="saveLabel(d, label.value)"
+        />
+      </label>
+      <label>
+        Startpunkt
+        <select #start (change)="saveStart(d, start.value)">
+          <option value="" [selected]="d.startDocumentId === null">
+            Gesamte Historie (alle Abrechnungen)
+          </option>
+          @for (s of d.statements; track s.id) {
+            <option [value]="s.id" [selected]="s.id === d.startDocumentId">
+              Depotauszug per {{ date(s.date) }}
+            </option>
+          }
+        </select>
+      </label>
+      @if (saved() === d.id) {
+        <span class="saved">Gespeichert</span>
+      }
+    </div>
+    @if (d.statements.length === 0) {
+      <p class="muted">Für einen Startpunkt bitte einen Depotauszug dieses Depots importieren.</p>
+    }
+  </section>
+} @empty {
+  <div class="app-card empty">Noch keine Depots – importiere zuerst Dokumente.</div>
+}
