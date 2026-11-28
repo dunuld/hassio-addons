@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.1.1 (unveröffentlicht)
+
+### Geändert
+
+- Depots mit Startpunkt zeigen in der Übersicht keine Hinweise mehr auf Lücken in der Historie
+  (fehlende Käufe, fehlende Kurse, Abweichungen zum Depotauszug)
+
 ## 1.1.0 (2026-11-28)
 
 ### Hinzugefügt

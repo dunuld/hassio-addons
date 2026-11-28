@@ -358,6 +358,46 @@ describe('Startpunkt (Depotauszug)', () => {
     expect(overview.warnings).toEqual([]);
   });
 
+  it('blendet Hinweise auf Lücken in der Historie aus, sobald ein Startpunkt gesetzt ist', () => {
+    const transactions = [
+      // Verkauf ohne bekannten Kauf und ohne Gewinn laut Bank
+      tx('sell', '2026-03-01', MSFT, 5, { grossCents: 150000 }),
+      // Kauf ohne jeden Kurs
+      tx('buy', '2026-04-01', 'DE0007236101', 2, { grossCents: 46000 }),
+    ];
+    const statement = [{ date: '2026-06-30', isin: WORLD, quantity: 99 }];
+    const withoutStart = computeOverview(input({ year: 2026, transactions, statement }));
+    expect(withoutStart.warnings).toEqual([
+      expect.stringContaining('fehlt der Kauf'),
+      expect.stringContaining('kein Kurs bekannt'),
+      expect.stringContaining('Depotauszug vom 30.06.2026'),
+    ]);
+
+    const withStart = computeOverview(
+      input({
+        year: 2026,
+        transactions,
+        statement,
+        start: { date: '2025-12-31', positions: [{ isin: WORLD, quantity: 10, costCents: 50000 }] },
+      }),
+    );
+    expect(withStart.warnings).toEqual([]);
+
+    // Hinweise, die den Startpunkt selbst oder ein unbekanntes Umtauschziel betreffen, bleiben
+    const kept = computeOverview(
+      input({
+        year: 2026,
+        securities: [{ isin: 'WKN:NEU001', name: 'WKN NEU001', priceEntity: null }],
+        transactions: [tx('exchange_in', '2026-02-20', 'WKN:NEU001', 1, { totalCents: 5000 })],
+        start: { date: '2025-12-31', positions: [{ isin: WORLD, quantity: 10, costCents: 0 }] },
+      }),
+    );
+    expect(kept.warnings).toEqual([
+      expect.stringContaining('Startpunkt 31.12.2025: Für IE00B4L5Y983 enthält'),
+      expect.stringContaining('Umtausch in WKN NEU001: Die ISIN ist noch unbekannt'),
+    ]);
+  });
+
   it('springt bei Jahren vor dem Startpunkt auf dessen Jahr und warnt bei fehlendem Kurswert', () => {
     const overview = computeOverview(
       input({
