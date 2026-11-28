@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.1.0 (unveröffentlicht)
+## 1.1.0 (2026-11-28)
 
 ### Hinzugefügt
 
@@ -9,6 +9,7 @@
   Einstandswert, ohne Investition. Ist das neue Wertpapier nur per WKN genannt, wird es später
   automatisch zugeordnet (z. B. über einen Depotauszug)
 - Import von Vorabpauschalen: zählen zu Steuern und Freistellungsauftrag, Summe in der Übersicht
+- Eigenes Icon und Logo für den Add-on Store
 
 ### Behoben
 

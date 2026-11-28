@@ -1,5 +1,5 @@
 name: ING Depot
-version: '1.0.0'
+version: '1.1.0'
 slug: ing_depot
 description: Depotübersicht aus ING-PDFs (Abrechnungen, Ertragsabrechnungen, Depotauszüge)
 arch:
