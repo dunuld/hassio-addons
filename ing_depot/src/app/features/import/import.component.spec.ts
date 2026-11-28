@@ -160,6 +160,29 @@ describe('ImportComponent', () => {
     flushLists([]);
   });
 
+  it('blendet alle nicht erkannten Dateien auf einmal aus', () => {
+    const second = { ...failure, id: 3, fileName: 'zwei.pdf' };
+    const { el, text, fixture } = render([document], [failure, second]);
+    fixture.detectChanges();
+    const button = [...el.querySelectorAll<HTMLButtonElement>('button')].find(
+      (b) => b.textContent?.trim() === 'Alle ausblenden',
+    )!;
+    button.click();
+    const req = http.expectOne('api/import-failures');
+    expect(req.request.method).toBe('DELETE');
+    req.flush(null);
+    flushLists([document], []);
+    expect(text()).not.toContain(sq('Nicht erkannt'));
+    expect(text()).not.toContain(sq('Alle ausblenden'));
+  });
+
+  it('zeigt einen Fehler beim Ausblenden aller Dateien', () => {
+    const { component, text } = render([document], [failure]);
+    component.clearFailures();
+    http.expectOne('api/import-failures').flush(null, serverError);
+    expect(text()).toContain(sq('Ausblenden fehlgeschlagen'));
+  });
+
   it('zeigt Fehler des Servers an', () => {
     const { component, text } = render();
     component.upload([new File(['a'], 'kauf.pdf')]);

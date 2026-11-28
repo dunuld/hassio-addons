@@ -525,6 +525,11 @@ export class DepotService {
       }));
   }
 
+  /** Blendet alle nicht erkannten Dateien aus; liefert deren Anzahl. */
+  clearFailures(): number {
+    return Number(this.db.prepare('DELETE FROM import_failures').run().changes);
+  }
+
   deleteFailure(id: number): void {
     const result = this.db.prepare('DELETE FROM import_failures WHERE id = ?').run(id);
     if (result.changes === 0) throw notFound('Eintrag nicht gefunden');

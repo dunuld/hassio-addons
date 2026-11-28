@@ -116,6 +116,11 @@ export function depotRouter(
     res.json(depot.listFailures());
   });
 
+  router.delete('/import-failures', (_req, res) => {
+    depot.clearFailures();
+    res.status(204).end();
+  });
+
   router.delete('/import-failures/:id', (req, res) => {
     depot.deleteFailure(parseId(req.params['id']));
     res.status(204).end();

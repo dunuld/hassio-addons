@@ -51,7 +51,8 @@ Es gibt zwei Wege:
 - **Upload**: Auf der Seite **Import** PDFs auswählen oder hineinziehen (mehrere gleichzeitig).
 - **Eingangsordner**: PDFs in `/share/ing_depot` legen (z. B. über das Samba-Add-on). Der Ordner
   wird jede Minute geprüft. Importierte Dateien wandern nach `importiert/`, nicht erkannte nach
-  `fehler/` und erscheinen auf der Seite **Import** unter „Nicht erkannt“.
+  `fehler/` und erscheinen auf der Seite **Import** unter „Nicht erkannt“ – dort einzeln oder mit
+  „Alle ausblenden“ entfernbar.
 
 Jedes Dokument wird nur einmal importiert – erkannt an der Datei und an der Ordernummer bzw. dem
 Inhalt. Löschst du ein Dokument, verschwinden auch seine Buchungen.

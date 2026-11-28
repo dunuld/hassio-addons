@@ -9,6 +9,7 @@
   vorbei, Gutschrift fehlt) und bis Dezember erwartete Dividenden – hochgerechnet aus den
   Ausschüttungen der letzten 12 Monate laut Yahoo Finance, brutto vor Steuern
 - Der Online-Kursabruf holt dafür einmal täglich die Dividendenhistorie der gehaltenen Wertpapiere
+- Import: „Alle ausblenden“ für nicht erkannte Dateien aus dem Eingangsordner
 
 ### Geändert
 

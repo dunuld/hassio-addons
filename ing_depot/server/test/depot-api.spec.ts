@@ -409,6 +409,13 @@ describe('Eingangsordner', () => {
     expect(failures.body[0]).toMatchObject({ fileName: 'unbekannt.pdf' });
     await request(app).delete(`/api/import-failures/${failures.body[0].id}`).expect(204);
     await request(app).delete(`/api/import-failures/${failures.body[0].id}`).expect(404);
+
+    // Alle auf einmal ausblenden
+    depot.addFailure('a.pdf', 'Unbekannt');
+    depot.addFailure('b.pdf', 'Unbekannt');
+    expect(depot.clearFailures()).toBe(2);
+    await request(app).delete('/api/import-failures').expect(204);
+    expect((await request(app).get('/api/import-failures').expect(200)).body).toEqual([]);
   });
 
   it('antwortet ohne konfigurierten Eingangsordner mit einer leeren Liste', async () => {

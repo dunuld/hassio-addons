@@ -88,6 +88,10 @@ export class ApiService {
     return this.http.get<ImportFailure[]>('api/import-failures');
   }
 
+  clearImportFailures() {
+    return this.http.delete<void>('api/import-failures');
+  }
+
   deleteImportFailure(id: number) {
     return this.http.delete<void>(`api/import-failures/${id}`);
   }

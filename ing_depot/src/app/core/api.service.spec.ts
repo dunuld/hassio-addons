@@ -70,6 +70,7 @@ describe('ApiService', () => {
     api.scanInbox().subscribe();
     api.importFailures().subscribe();
     api.deleteImportFailure(5).subscribe();
+    api.clearImportFailures().subscribe();
     api.addPrice('IE00', { price: 12 }).subscribe();
     api.updateSecurity('IE00', { priceEntity: 'sensor.x' }).subscribe();
 
@@ -93,6 +94,7 @@ describe('ApiService', () => {
     expectCall('POST', 'api/inbox/scan');
     expectCall('GET', 'api/import-failures');
     expectCall('DELETE', 'api/import-failures/5');
+    expectCall('DELETE', 'api/import-failures');
     expectCall('POST', 'api/securities/IE00/prices');
     expectCall('PUT', 'api/securities/IE00');
     expect(api.documentUrl(9)).toBe('api/documents/9/file');
