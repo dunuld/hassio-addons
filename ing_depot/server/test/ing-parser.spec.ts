@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { DocumentParseError, parseDecimal, parseIngDocument } from '../src/ing-parser.js';
 import {
+  advanceLines,
+  exchangeLines,
   BUY_LINES,
   DEPOT_A,
   DEPOT_B,
@@ -210,6 +212,7 @@ describe('Depotauszug', () => {
       positions: [
         {
           isin: 'IE00B4L5Y983',
+          wkn: 'A0RPWH',
           name: 'iShs Core MSCI World U.ETF',
           quantity: 10,
           price: 50,
@@ -217,6 +220,7 @@ describe('Depotauszug', () => {
         },
         {
           isin: 'US5949181045',
+          wkn: '870747',
           name: 'Microsoft Corp.',
           quantity: 20,
           price: 400,
@@ -254,6 +258,98 @@ describe('Depotauszug', () => {
   it('meldet einen Auszug ohne Positionen oder Stichtag', () => {
     expect(() => parseIngDocument(['Depotauszug per 31.12.2025'])).toThrow(/keine Positionen/);
     expect(() => parseIngDocument(['Depotauszug'])).toThrow(/Stichtag/);
+  });
+});
+
+describe('Umtausch', () => {
+  it('liest Abgang, Kurswert, Gewinn laut Bank und das neue Wertpapier per WKN', () => {
+    expect(parseIngDocument(exchangeLines())).toEqual({
+      type: 'exchange',
+      depotNumber: DEPOT_A,
+      isin: 'LU0392494562',
+      wkn: 'ETF110',
+      name: 'Alter Welt-ETF',
+      date: '2026-02-20',
+      reference: '55555555.001',
+      quantity: 10,
+      price: 50,
+      grossCents: 50000,
+      taxCents: 0,
+      gainCents: 4000,
+      target: { isin: null, wkn: 'NEU001' },
+      targetQuantity: 10,
+    });
+  });
+
+  it('rechnet das Umtauschverhältnis um und erkennt eine Ziel-ISIN', () => {
+    const doc = parseIngDocument(
+      exchangeLines({
+        note: 'Ihre Anteile wurden im Verhältnis 1:2,5 in die ISIN IE00B4L5Y983 umgetauscht.',
+        gain: null,
+      }),
+    );
+    expect(doc).toMatchObject({
+      target: { isin: 'IE00B4L5Y983', wkn: null },
+      targetQuantity: 25,
+      gainCents: null,
+    });
+  });
+
+  it('übernimmt einbehaltene Steuern und berechnet den Kurs bei fehlender Kurszeile', () => {
+    const lines = exchangeLines({ charged: '12,34' }).filter((l) => !l.startsWith('Kurs EUR'));
+    expect(parseIngDocument(lines)).toMatchObject({ taxCents: 1234, price: 50 });
+    const withTax = exchangeLines({ charged: '10,55' });
+    withTax.splice(10, 0, 'Kapitalertragsteuer 25,00 % EUR 10,00', 'Solidaritätszuschlag EUR 0,55');
+    expect(parseIngDocument(withTax)).toMatchObject({ taxCents: 1055 });
+  });
+
+  it('meldet einen Umtausch ohne Angabe des neuen Wertpapiers', () => {
+    expect(() => parseIngDocument(exchangeLines({ note: 'Umtausch erfolgt.' }))).toThrow(
+      /neue Wertpapier/,
+    );
+  });
+});
+
+describe('Vorabpauschale', () => {
+  it('liest eine Vorabpauschale von 0,00 €', () => {
+    expect(parseIngDocument(advanceLines())).toEqual({
+      type: 'advance_lump_sum',
+      depotNumber: DEPOT_A,
+      isin: 'IE00B4L5Y983',
+      wkn: 'A0RPWH',
+      name: 'iShs Core MSCI World U.ETF',
+      date: '2026-01-02',
+      reference: null,
+      quantity: 10,
+      grossCents: 0,
+      taxCents: 0,
+    });
+  });
+
+  it('liest Betrag und einbehaltene Steuern', () => {
+    const doc = advanceLines({
+      amount: '10,00',
+      taxes: [
+        ['Kapitalertragsteuer 25,00 %', '2,50'],
+        ['Solidaritätszuschlag 5,50 %', '0,13'],
+      ],
+      total: '2,63',
+      charged: true,
+    });
+    expect(parseIngDocument(doc)).toMatchObject({ grossCents: 1000, taxCents: 263 });
+    // Ohne Steuerzeilen: der belastete Gesamtbetrag
+    const charged = advanceLines({ amount: '10,00', total: '2,64', charged: true });
+    expect(parseIngDocument(charged)).toMatchObject({ taxCents: 264 });
+  });
+
+  it('meldet eine Vorabpauschale ohne Betrag', () => {
+    const lines = advanceLines().filter((l) => !l.startsWith('Vorabpauschale gem.'));
+    expect(() => parseIngDocument(lines)).toThrow(/Vorabpauschale/);
+  });
+
+  it('verwechselt die Steuerseite einer Verkaufsabrechnung nicht mit einer Vorabpauschale', () => {
+    expect(parseIngDocument(exchangeLines()).type).toBe('exchange');
+    expect(parseIngDocument(SELL_LINES).type).toBe('sell');
   });
 });
 

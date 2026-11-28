@@ -1,5 +1,24 @@
 # Changelog
 
+## 1.1.0 (unveröffentlicht)
+
+### Hinzugefügt
+
+- Import von „Wertpapierabrechnung zum steuerrelevanten Umtausch“ (z. B. Fondsverschmelzung):
+  Abgang zum Kurswert mit Veräußerungsgewinn der Bank, Zugang des neuen Wertpapiers zum selben
+  Einstandswert, ohne Investition. Ist das neue Wertpapier nur per WKN genannt, wird es später
+  automatisch zugeordnet (z. B. über einen Depotauszug)
+- Import von Vorabpauschalen: zählen zu Steuern und Freistellungsauftrag, Summe in der Übersicht
+
+### Behoben
+
+- Umtausch-Abrechnungen und Vorabpauschalen wurden beim Import als unbekannt abgelehnt
+
+### Technik
+
+- Schema v4: Dokument- und Buchungsart ohne CHECK-Einschränkung (Tabellen werden beim Start einmalig
+  umgebaut)
+
 ## 1.0.0 (2026-11-28)
 
 ### Hinzugefügt

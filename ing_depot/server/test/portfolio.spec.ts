@@ -451,3 +451,87 @@ describe('mergeOverviews', () => {
     expect(merged.positions[0]).toMatchObject({ quantity: 2, price: 60, priceSource: 'document' });
   });
 });
+
+describe('Umtausch und Vorabpauschale', () => {
+  const NEW = 'LU0392494562';
+
+  it('behandelt einen Umtausch als Verkauf und Kauf ohne Geldfluss', () => {
+    const overview = computeOverview(
+      input({
+        securities: [
+          { isin: WORLD, name: 'Alter ETF', priceEntity: null },
+          { isin: NEW, name: 'Neuer ETF', priceEntity: null },
+        ],
+        transactions: [
+          tx('buy', '2025-03-01', WORLD, 10, { grossCents: 46000 }),
+          tx('exchange_out', '2026-02-20', WORLD, 10, {
+            grossCents: 50000,
+            taxCents: 0,
+            totalCents: 0,
+            gainCents: 4000,
+          }),
+          tx('exchange_in', '2026-02-20', NEW, 10, { grossCents: 50000, totalCents: 50000 }),
+        ],
+        prices: [
+          { isin: WORLD, date: '2025-12-31', price: 48, source: 'document' },
+          { isin: NEW, date: '2026-06-30', price: 55, source: 'document' },
+        ],
+      }),
+    );
+    // Kein Geld geflossen: weder investiert noch Verkaufserlös
+    expect(overview).toMatchObject({
+      investedGrossCents: 0,
+      investedNetCents: 0,
+      realizedCents: 4000,
+      monthly: expect.arrayContaining([
+        { month: 2, investedCents: 0, dividendsNetCents: 0, realizedCents: 4000 },
+      ]),
+    });
+    const [neu, alt] = overview.positions;
+    // Einstand des neuen Wertpapiers = Kurswert beim Umtausch
+    expect(neu).toMatchObject({ isin: NEW, quantity: 10, costCents: 50000, valueCents: 55000 });
+    expect(neu!.gainCents).toBe(5000);
+    expect(alt).toMatchObject({ isin: WORLD, quantity: 0, realizedCents: 4000 });
+    // Kursgewinn seit 01.01.: 480 € → 500 € (alt) und 500 € → 550 € (neu)
+    expect(overview.ytdGainCents).toBe(2000 + 5000);
+    expect(overview.warnings).toEqual([]);
+  });
+
+  it('warnt bei einem Umtausch ohne bekannten Bestand und bei unbekannter ISIN', () => {
+    const overview = computeOverview(
+      input({
+        securities: [{ isin: 'WKN:NEU001', name: 'WKN NEU001', priceEntity: null }],
+        transactions: [
+          tx('exchange_out', '2026-02-20', WORLD, 10, { grossCents: 50000, totalCents: 0 }),
+          tx('exchange_in', '2026-02-20', 'WKN:NEU001', 10, { totalCents: 50000 }),
+        ],
+        prices: [{ isin: 'WKN:NEU001', date: '2026-02-20', price: 50, source: 'document' }],
+      }),
+    );
+    expect(overview.warnings).toEqual([
+      expect.stringMatching(/^Umtausch von IE00B4L5Y983 am 20\.02\.2026: Für 10 Stück fehlt/),
+      expect.stringContaining('Umtausch in WKN NEU001: Die ISIN ist noch unbekannt'),
+    ]);
+  });
+
+  it('zählt Vorabpauschalen zu Steuern und Freistellungsauftrag, nicht zu Dividenden', () => {
+    const overview = computeOverview(
+      input({
+        transactions: [
+          tx('buy', '2025-03-01', WORLD, 10, { grossCents: 50000 }),
+          tx('advance_lump_sum', '2026-01-02', WORLD, 10, { grossCents: 1000, taxCents: 263 }),
+          tx('advance_lump_sum', '2025-01-02', WORLD, 10, { grossCents: 500, taxCents: 0 }),
+        ],
+        prices: [{ isin: WORLD, date: '2025-12-31', price: 50, source: 'document' }],
+      }),
+    );
+    expect(overview).toMatchObject({
+      advanceLumpSumCents: 1000,
+      taxesCents: 263,
+      dividendsGrossCents: 0,
+      dividendsNetCents: 0,
+      exemptionUsedCents: 1000,
+    });
+    expect(overview.positions[0]).toMatchObject({ quantity: 10, dividendsNetCents: 0 });
+  });
+});

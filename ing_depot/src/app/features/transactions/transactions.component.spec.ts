@@ -70,6 +70,17 @@ describe('TransactionsComponent', () => {
     expect(el.querySelectorAll('tbody button')).toHaveLength(1);
   });
 
+  it('benennt Umtausch und Vorabpauschale', () => {
+    const { rows } = render([
+      { ...base, id: 4, type: 'exchange_out' },
+      { ...base, id: 5, type: 'exchange_in' },
+      { ...base, id: 6, type: 'advance_lump_sum', price: 0 },
+    ]);
+    expect(rows()[0]).toContain(sq('Umtausch (Abgang)'));
+    expect(rows()[1]).toContain(sq('Umtausch (Zugang)'));
+    expect(rows()[2]).toContain(sq('Vorabpauschale'));
+  });
+
   it('filtert nach Jahr', () => {
     const { el, rows } = render();
     const select = el.querySelector('select')!;

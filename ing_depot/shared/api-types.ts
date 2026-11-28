@@ -12,13 +12,31 @@ export interface ApiError {
 }
 
 /** Art eines importierten ING-Dokuments. */
-export type DocumentType = 'buy' | 'sell' | 'dividend' | 'statement';
+export type DocumentType =
+  | 'buy'
+  | 'sell'
+  | 'dividend'
+  | 'statement'
+  /** Steuerrelevanter Umtausch, z. B. Fondsverschmelzung */
+  | 'exchange'
+  /** Vorabpauschale thesaurierender Fonds */
+  | 'advance_lump_sum';
 
 /**
  * Art einer Buchung. `opening` ist ein manuell erfasster Startbestand
  * (Stücke samt Einstandswert, die vor dem ältesten importierten Kauf erworben wurden).
  */
-export type TransactionType = 'buy' | 'sell' | 'dividend' | 'opening';
+export type TransactionType =
+  | 'buy'
+  | 'sell'
+  | 'dividend'
+  | 'opening'
+  /** Umtausch: Abgang des alten Wertpapiers (wie ein Verkauf, ohne Geldfluss) */
+  | 'exchange_out'
+  /** Umtausch: Zugang des neuen Wertpapiers (wie ein Kauf, ohne Geldfluss) */
+  | 'exchange_in'
+  /** Vorabpauschale: steuerpflichtiger Ertrag ohne Auszahlung */
+  | 'advance_lump_sum';
 
 /** Ein Depot, erkannt an der Depotnummer der importierten Dokumente. */
 export interface Depot {
@@ -202,8 +220,10 @@ export interface Overview {
   realizedCents: number;
   dividendsGrossCents: number;
   dividendsNetCents: number;
-  /** Einbehaltene Steuern auf Verkäufe und Erträge */
+  /** Einbehaltene Steuern auf Verkäufe, Erträge und Vorabpauschalen */
   taxesCents: number;
+  /** Vorabpauschalen des Jahres (steuerpflichtig, ohne Auszahlung) */
+  advanceLumpSumCents: number;
   /** Depotwert zum Stichtag */
   valueCents: number;
   costCents: number;
@@ -215,7 +235,7 @@ export interface Overview {
   ytdGainPct: number | null;
   /** Freistellungsauftrag in Cent (0 = nicht konfiguriert) */
   exemptionCents: number;
-  /** Davon rechnerisch verbraucht (Bruttoerträge + realisierte Gewinne, min. 0) */
+  /** Davon rechnerisch verbraucht (Bruttoerträge + realisierte Gewinne + Vorabpauschalen, min. 0) */
   exemptionUsedCents: number;
   positions: Position[];
   monthly: MonthlyFigures[];

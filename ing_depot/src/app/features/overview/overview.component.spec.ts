@@ -51,6 +51,7 @@ function overview(patch: Partial<Overview> = {}): Overview {
     ytdGainPct: -2.5,
     exemptionCents: 100000,
     exemptionUsedCents: 24250,
+    advanceLumpSumCents: 0,
     positions: [position],
     monthly: Array.from({ length: 12 }, (_, i) => ({
       month: i + 1,
@@ -130,6 +131,16 @@ describe('OverviewComponent', () => {
     expect(text()).toContain(sq('MSCI World IE00B4L5Y983'));
     expect(text()).toContain(sq('30.06.2026 · manuell'));
     expect(el.querySelector('.tile-value.neg')).toBeTruthy();
+  });
+
+  it('nennt Vorabpauschalen nur, wenn es welche gibt', () => {
+    const { text } = render();
+    expect(text()).not.toContain('Vorabpauschalen');
+  });
+
+  it('zeigt die Vorabpauschalen des Jahres in der Fußzeile', () => {
+    const { text } = render(overview({ advanceLumpSumCents: 1234 }));
+    expect(text()).toContain(sq('Vorabpauschalen: 12,34 €'));
   });
 
   it('zeigt einen Hinweis für ein leeres Depot', () => {

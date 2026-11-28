@@ -6,7 +6,7 @@ import { DatabaseSync } from 'node:sqlite';
 export type Database = DatabaseSync;
 export type Row = Record<string, unknown>;
 
-export const SCHEMA_VERSION = 3;
+export const SCHEMA_VERSION = 4;
 
 const schemaSql = (): string => readFileSync(new URL('./schema.sql', import.meta.url), 'utf8');
 
@@ -59,6 +59,63 @@ const MIGRATION_3 = `
   ALTER TABLE securities ADD COLUMN resolved_symbol TEXT;
 `;
 
+/**
+ * v4: neue Dokument- und Buchungsarten (Umtausch, Vorabpauschale). SQLite kann CHECK-Bedingungen
+ * nicht ändern, daher werden `documents` und `transactions` ohne Einschränkung der Art neu
+ * aufgebaut (Fremdschlüssel sind dabei abgeschaltet, siehe `migrate`).
+ */
+const MIGRATION_4 = `
+  CREATE TABLE documents_v4 (
+    id          INTEGER PRIMARY KEY,
+    type        TEXT NOT NULL,
+    file_name   TEXT NOT NULL,
+    sha256      TEXT NOT NULL UNIQUE,
+    doc_date    TEXT NOT NULL,
+    reference   TEXT,
+    content_key TEXT NOT NULL UNIQUE,
+    source      TEXT NOT NULL CHECK (source IN ('upload', 'inbox')),
+    summary     TEXT NOT NULL,
+    imported_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+    depot_id    INTEGER REFERENCES depots (id)
+  );
+  INSERT INTO documents_v4
+      (id, type, file_name, sha256, doc_date, reference, content_key, source, summary,
+       imported_at, depot_id)
+    SELECT id, type, file_name, sha256, doc_date, reference, content_key, source, summary,
+           imported_at, depot_id
+      FROM documents;
+  DROP TABLE documents;
+  ALTER TABLE documents_v4 RENAME TO documents;
+  CREATE INDEX documents_depot ON documents (depot_id);
+
+  CREATE TABLE transactions_v4 (
+    id          INTEGER PRIMARY KEY,
+    document_id INTEGER REFERENCES documents (id) ON DELETE CASCADE,
+    type        TEXT NOT NULL,
+    date        TEXT NOT NULL,
+    isin        TEXT NOT NULL REFERENCES securities (isin),
+    quantity    REAL NOT NULL,
+    price       REAL NOT NULL,
+    gross_cents INTEGER NOT NULL,
+    fee_cents   INTEGER NOT NULL,
+    tax_cents   INTEGER NOT NULL,
+    total_cents INTEGER NOT NULL,
+    depot_id    INTEGER REFERENCES depots (id),
+    gain_cents  INTEGER
+  );
+  INSERT INTO transactions_v4
+      (id, document_id, type, date, isin, quantity, price, gross_cents, fee_cents, tax_cents,
+       total_cents, depot_id, gain_cents)
+    SELECT id, document_id, type, date, isin, quantity, price, gross_cents, fee_cents, tax_cents,
+           total_cents, depot_id, gain_cents
+      FROM transactions;
+  DROP TABLE transactions;
+  ALTER TABLE transactions_v4 RENAME TO transactions;
+  CREATE INDEX transactions_date ON transactions (date);
+  CREATE INDEX transactions_isin ON transactions (isin);
+  CREATE INDEX transactions_depot ON transactions (depot_id);
+`;
+
 /** Öffnet (oder erstellt) die Datenbank und wendet das Schema an. `:memory:` für Tests. */
 export function openDatabase(file: string): Database {
   if (file !== ':memory:') mkdirSync(dirname(file), { recursive: true });
@@ -83,13 +140,26 @@ function migrate(db: Database): void {
       `Datenbank-Schema v${version} ist neuer als diese Version des Add-ons (v${SCHEMA_VERSION}).`,
     );
   }
-  transaction(db, () => {
-    if (version < 1) db.exec(schemaSql());
-    if (version < 2) db.exec(MIGRATION_2);
-    if (version < 3) db.exec(MIGRATION_3);
-    // Künftige Migrationen: if (version < 4) { ... }
-    db.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`);
-  });
+  if (version === SCHEMA_VERSION) return;
+  // Tabellenumbau (v4) nur ohne Fremdschlüsselprüfung – sonst löscht DROP TABLE per CASCADE
+  // abhängige Zeilen. Der Schalter wirkt nur außerhalb einer Transaktion.
+  db.exec('PRAGMA foreign_keys = OFF');
+  try {
+    transaction(db, () => {
+      if (version < 1) db.exec(schemaSql());
+      if (version < 2) db.exec(MIGRATION_2);
+      if (version < 3) db.exec(MIGRATION_3);
+      if (version < 4) db.exec(MIGRATION_4);
+      // Künftige Migrationen: if (version < 5) { ... }
+      const broken = db.prepare('PRAGMA foreign_key_check').all();
+      if (broken.length > 0) {
+        throw new Error(`Migration fehlgeschlagen: ${broken.length} verwaiste Verweise.`);
+      }
+      db.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`);
+    });
+  } finally {
+    db.exec('PRAGMA foreign_keys = ON');
+  }
 }
 
 /** Führt `fn` in einer Transaktion aus; bei Fehlern wird zurückgerollt. Nicht verschachteln. */

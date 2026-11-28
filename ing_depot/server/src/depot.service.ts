@@ -83,13 +83,23 @@ const DOCUMENT_LABEL: Record<DocumentType, string> = {
   sell: 'Verkauf',
   dividend: 'Ertrag',
   statement: 'Depotauszug',
+  exchange: 'Umtausch',
+  advance_lump_sum: 'Vorabpauschale',
 };
+
+/** Platzhalter-Kennung für ein Wertpapier, von dem bisher nur die WKN bekannt ist. */
+export const wknPlaceholder = (wkn: string): string => `WKN:${wkn}`;
 
 function summarize(doc: ParsedDocument): string {
   if (doc.type === 'statement') {
     return `Depotauszug mit ${doc.positions.length} Position${doc.positions.length === 1 ? '' : 'en'}`;
   }
   if (doc.type === 'dividend') return `Ertrag ${doc.name}`;
+  if (doc.type === 'advance_lump_sum') return `Vorabpauschale ${doc.name}`;
+  if (doc.type === 'exchange') {
+    const target = doc.target.isin ?? `WKN ${doc.target.wkn}`;
+    return `Umtausch ${quantityText(doc.quantity)} × ${doc.name} → ${target}`;
+  }
   return `${DOCUMENT_LABEL[doc.type]} ${quantityText(doc.quantity)} × ${doc.name}`;
 }
 
@@ -98,7 +108,8 @@ function contentKey(doc: ParsedDocument): string {
   const depot = doc.depotNumber ?? '';
   if (doc.type === 'statement') return `${depot}|statement|${doc.date}`;
   if (doc.reference) return `${depot}|${doc.type}|${doc.reference}`;
-  return [depot, doc.type, doc.isin, doc.date, doc.quantity, doc.totalCents].join('|');
+  const amount = 'totalCents' in doc ? doc.totalCents : doc.grossCents;
+  return [depot, doc.type, doc.isin, doc.date, doc.quantity, amount].join('|');
 }
 
 function toDocument(row: Row): DepotDocument {
@@ -220,15 +231,94 @@ export class DepotService {
     return { fileName, status: 'imported', message: document.summary, document };
   }
 
-  private upsertSecurity(isin: string, name: string, wkn: string | null = null): void {
+  /**
+   * Legt ein Wertpapier an bzw. ergänzt es. Der Name wird überschrieben, wenn bisher nur die ISIN
+   * bekannt war oder `preferName` gesetzt ist (Abrechnungen führen den vollständigen Namen).
+   * War das Wertpapier bisher nur per WKN bekannt (Umtausch), wird der Platzhalter übernommen.
+   */
+  private upsertSecurity(
+    isin: string,
+    name: string,
+    wkn: string | null = null,
+    preferName = wkn !== null,
+  ): void {
     this.db
       .prepare(
         `INSERT INTO securities (isin, wkn, name) VALUES (?, ?, ?)
          ON CONFLICT (isin) DO UPDATE SET
            wkn = COALESCE(excluded.wkn, wkn),
-           name = CASE WHEN name = isin OR excluded.wkn IS NOT NULL THEN excluded.name ELSE name END`,
+           name = CASE WHEN name = isin OR ? THEN excluded.name ELSE name END`,
       )
-      .run(isin, wkn, name);
+      .run(isin, wkn, name, preferName ? 1 : 0);
+    if (wkn) this.adoptPlaceholder(isin, wkn);
+  }
+
+  /** Überträgt Buchungen und Kurse vom WKN-Platzhalter auf das Wertpapier mit ISIN. */
+  private adoptPlaceholder(isin: string, wkn: string): void {
+    const placeholder = wknPlaceholder(wkn);
+    if (!this.db.prepare('SELECT 1 FROM securities WHERE isin = ?').get(placeholder)) return;
+    this.db.prepare('UPDATE transactions SET isin = ? WHERE isin = ?').run(isin, placeholder);
+    this.db
+      .prepare('UPDATE statement_positions SET isin = ? WHERE isin = ?')
+      .run(isin, placeholder);
+    this.db.prepare('UPDATE OR IGNORE prices SET isin = ? WHERE isin = ?').run(isin, placeholder);
+    this.db.prepare('DELETE FROM prices WHERE isin = ?').run(placeholder);
+    this.db.prepare('DELETE FROM securities WHERE isin = ?').run(placeholder);
+  }
+
+  /** ISIN des Zielwertpapiers eines Umtauschs; nur per WKN bekannt → Platzhalter. */
+  private exchangeTarget(target: { isin: string | null; wkn: string | null }): string {
+    if (target.isin) {
+      this.upsertSecurity(target.isin, target.isin, target.wkn, false);
+      return target.isin;
+    }
+    const wkn = target.wkn!;
+    const known = this.db
+      .prepare("SELECT isin FROM securities WHERE wkn = ? AND isin NOT LIKE 'WKN:%'")
+      .get(wkn);
+    if (known) return String(known['isin']);
+    const placeholder = wknPlaceholder(wkn);
+    this.upsertSecurity(placeholder, `WKN ${wkn}`, null, false);
+    return placeholder;
+  }
+
+  private insertTransaction(row: {
+    documentId: number | null;
+    depotId: number;
+    type: TransactionType;
+    date: string;
+    isin: string;
+    quantity: number;
+    price: number;
+    grossCents: number;
+    feeCents: number;
+    taxCents: number;
+    totalCents: number;
+    gainCents?: number | null;
+  }): number {
+    return Number(
+      this.db
+        .prepare(
+          `INSERT INTO transactions
+             (document_id, depot_id, type, date, isin, quantity, price,
+              gross_cents, fee_cents, tax_cents, total_cents, gain_cents)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run(
+          row.documentId,
+          row.depotId,
+          row.type,
+          row.date,
+          row.isin,
+          row.quantity,
+          row.price,
+          row.grossCents,
+          row.feeCents,
+          row.taxCents,
+          row.totalCents,
+          row.gainCents ?? null,
+        ).lastInsertRowid,
+    );
   }
 
   private upsertPrice(
@@ -295,7 +385,8 @@ export class DepotService {
          VALUES (?, ?, ?, ?, ?)`,
       );
       for (const position of doc.positions) {
-        this.upsertSecurity(position.isin, position.name);
+        // Namen aus dem Auszug sind oft gekürzt – nur übernehmen, wenn keiner bekannt ist
+        this.upsertSecurity(position.isin, position.name, position.wkn, false);
         insert.run(id, doc.date, position.isin, position.quantity, position.valueCents);
         if (position.price) {
           this.upsertPrice(position.isin, doc.date, position.price, 'document', id);
@@ -305,28 +396,62 @@ export class DepotService {
     }
 
     this.upsertSecurity(doc.isin, doc.name, doc.wkn);
+    const base = { documentId: id, depotId, date: doc.date, isin: doc.isin, feeCents: 0 };
+
+    if (doc.type === 'exchange') {
+      // Abgang wie ein Verkauf zum Kurswert, Zugang wie ein Kauf zum selben Wert
+      const target = this.exchangeTarget(doc.target);
+      this.insertTransaction({
+        ...base,
+        type: 'exchange_out',
+        quantity: doc.quantity,
+        price: doc.price,
+        grossCents: doc.grossCents,
+        taxCents: doc.taxCents,
+        totalCents: -doc.taxCents,
+        gainCents: doc.gainCents,
+      });
+      const targetPrice = doc.grossCents / 100 / doc.targetQuantity;
+      this.insertTransaction({
+        ...base,
+        type: 'exchange_in',
+        isin: target,
+        quantity: doc.targetQuantity,
+        price: targetPrice,
+        grossCents: doc.grossCents,
+        taxCents: 0,
+        totalCents: doc.grossCents,
+      });
+      this.upsertPrice(doc.isin, doc.date, doc.price, 'document', id);
+      this.upsertPrice(target, doc.date, targetPrice, 'document', id);
+      return id;
+    }
+
+    if (doc.type === 'advance_lump_sum') {
+      this.insertTransaction({
+        ...base,
+        type: 'advance_lump_sum',
+        quantity: doc.quantity,
+        price: 0,
+        grossCents: doc.grossCents,
+        taxCents: doc.taxCents,
+        totalCents: -doc.taxCents,
+      });
+      return id;
+    }
+
     const price = doc.type === 'dividend' ? 0 : doc.price;
-    this.db
-      .prepare(
-        `INSERT INTO transactions
-           (document_id, depot_id, type, date, isin, quantity, price,
-            gross_cents, fee_cents, tax_cents, total_cents, gain_cents)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      )
-      .run(
-        id,
-        depotId,
-        doc.type,
-        doc.date,
-        doc.isin,
-        doc.quantity,
-        price,
-        doc.grossCents,
-        doc.type === 'dividend' ? 0 : doc.feeCents,
-        doc.taxCents,
-        doc.totalCents,
-        doc.type === 'sell' ? doc.gainCents : null,
-      );
+    this.insertTransaction({
+      ...base,
+      type: doc.type,
+      quantity: doc.quantity,
+      price,
+      grossCents: doc.grossCents,
+      feeCents: doc.type === 'dividend' ? 0 : doc.feeCents,
+      taxCents: doc.taxCents,
+      totalCents: doc.totalCents,
+      gainCents: doc.type === 'sell' ? doc.gainCents : null,
+    });
     if (price > 0) this.upsertPrice(doc.isin, doc.date, price, 'document', id);
     return id;
   }
@@ -607,7 +732,8 @@ export class DepotService {
   }[] {
     return this.db
       .prepare(
-        'SELECT isin, name, price_symbol, resolved_symbol FROM securities WHERE online_prices = 1',
+        `SELECT isin, name, price_symbol, resolved_symbol FROM securities
+          WHERE online_prices = 1 AND isin NOT LIKE 'WKN:%'`,
       )
       .all()
       .map((row) => ({

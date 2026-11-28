@@ -156,6 +156,8 @@ export interface StatementPositionFixture {
   quantity: string;
   name: string;
   isin: string;
+  /** Standard: aus der ISIN abgeleitet */
+  wkn?: string;
   price: string;
   value: string;
 }
@@ -175,7 +177,7 @@ export function statementLines(
     ...positions.flatMap((p) => [
       `${p.quantity} Stück ${p.name} ${p.price} EUR ${p.value} EUR`,
       'Registered Shares o.N.',
-      `ISIN (WKN): ${p.isin} (123456)`,
+      `ISIN (WKN): ${p.isin} (${p.wkn ?? p.isin.slice(5, 11)})`,
       'Verwahrart: Wertpapierrechnung',
       'Lagerland: Großbritannien',
     ]),
@@ -190,6 +192,7 @@ export const STATEMENT_LINES = statementLines('31.12.2025', [
     quantity: '10',
     name: 'iShs Core MSCI World U.ETF',
     isin: 'IE00B4L5Y983',
+    wkn: 'A0RPWH',
     price: '50,00',
     value: '500,00',
   },
@@ -197,10 +200,87 @@ export const STATEMENT_LINES = statementLines('31.12.2025', [
     quantity: '20',
     name: 'Microsoft Corp.',
     isin: 'US5949181045',
+    wkn: '870747',
     price: '400,00',
     value: '8.000,00',
   },
 ]);
+
+export interface ExchangeFixture {
+  depot?: string;
+  isin?: string;
+  wkn?: string;
+  name?: string;
+  quantity?: string;
+  price?: string;
+  gross?: string;
+  /** Endbetrag zu Ihren Lasten (einbehaltene Steuern) */
+  charged?: string;
+  /** Hinweistext mit dem neuen Wertpapier */
+  note?: string;
+  gain?: string | null;
+}
+
+/** „Wertpapierabrechnung zum steuerrelevanten Umtausch“ (Fondsverschmelzung) */
+export function exchangeLines(f: ExchangeFixture = {}): string[] {
+  const isinLine = `ISIN (WKN) ${f.isin ?? 'LU0392494562'} (${f.wkn ?? 'ETF110'})`;
+  return [
+    ...header(f.depot ?? DEPOT_A, '21.02.2026'),
+    'Wertpapierabrechnung zum steuerrelevanten Umtausch',
+    'Ordernummer 55555555.001',
+    isinLine,
+    `Wertpapierbezeichnung ${f.name ?? 'Alter Welt-ETF'}`,
+    'Act.Nom. UCITS ETF DR (C)o.N.',
+    `Nominale Stück ${f.quantity ?? '10,00000'}`,
+    `Kurs EUR ${f.price ?? '50,00'}`,
+    'Ausführungstag 20.02.2026',
+    `Kurswert EUR ${f.gross ?? '500,00'}`,
+    `Zwischensumme EUR ${f.gross ?? '500,00'}`,
+    `Endbetrag zu Ihren Lasten EUR ${f.charged ?? '0,00'}`,
+    'Valuta 20.02.2026',
+    'Wertpapiere zulasten Girosammelverwahrung.',
+    f.note ?? 'Ihre Anteile wurden im Verhältnis 1:1 in die WKN NEU001 umgetauscht.',
+    'Jahressteuerbescheinigung folgt.',
+    ...footer,
+    'Ordernummer 55555555.001',
+    isinLine,
+    ...(f.gain === null
+      ? []
+      : [`Veräußerungsgewinn nach Differenzmethode ${f.gain ?? '40,00'} EUR`]),
+    'Abzüglich besitzanteilige Vorabpauschale 2,00 EUR',
+    'KapSt-pflichtiger Kapitalertrag 26,60 EUR',
+  ];
+}
+
+export interface AdvanceFixture {
+  depot?: string;
+  isin?: string;
+  name?: string;
+  amount?: string;
+  taxes?: [string, string][];
+  total?: string;
+  charged?: boolean;
+}
+
+/** Mitteilung zur Vorabpauschale eines thesaurierenden Fonds */
+export function advanceLines(f: AdvanceFixture = {}): string[] {
+  return [
+    ...header(f.depot ?? DEPOT_A, '20.01.2026'),
+    'Vorabpauschale',
+    `ISIN (WKN) ${f.isin ?? 'IE00B4L5Y983'} (A0RPWH)`,
+    `Wertpapierbezeichnung ${f.name ?? 'iShs Core MSCI World U.ETF'}`,
+    'Registered Shs USD (Acc) o.N.',
+    'Nominale 10,00 Stück',
+    'Ex-Tag 02.01.2026',
+    'Zahltag 02.01.2026',
+    `Vorabpauschale gem. § 18 InvStG EUR ${f.amount ?? '0,00'}`,
+    ...(f.taxes ?? []).map(([label, amount]) => `${label} EUR ${amount}`),
+    `KapSt-pflichtiger Kapitalertrag EUR ${f.amount ?? '0,00'}`,
+    `Gesamtbetrag zu Ihren ${f.charged ? 'Lasten' : 'Gunsten'} EUR ${f.total ?? '0,00'}`,
+    'Der ermittelte Wert für die Vorabpauschale beträgt 0,00 EUR. Es erfolgt daher keine Steuerbelastung.',
+    ...footer,
+  ];
+}
 
 /** Fasst Zeilen zu einem „PDF“ für den Test-Reader zusammen (siehe `textReader`). */
 export const fakePdf = (lines: string[]): Buffer => Buffer.from(lines.join('\n'), 'utf8');
