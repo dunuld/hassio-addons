@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.2.0 (unveröffentlicht)
+## 1.2.0 (2026-11-28)
 
 ### Hinzugefügt
 
