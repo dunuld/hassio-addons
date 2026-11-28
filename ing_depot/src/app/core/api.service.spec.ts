@@ -59,6 +59,8 @@ describe('ApiService', () => {
     api.transactions(2).subscribe();
     api.depots().subscribe();
     api.updateDepot(2, { label: 'A' }).subscribe();
+    api.priceStatus().subscribe();
+    api.refreshPrices().subscribe();
     api.addOpening(opening).subscribe();
     api.deleteTransaction(3).subscribe();
     api.documents().subscribe();
@@ -78,6 +80,8 @@ describe('ApiService', () => {
       });
     expectCall('GET', 'api/depots');
     expectCall('PUT', 'api/depots/2');
+    expectCall('GET', 'api/prices/status');
+    expectCall('POST', 'api/prices/refresh');
     expectCall('POST', 'api/transactions');
     expectCall('DELETE', 'api/transactions/3');
     expectCall('GET', 'api/documents');

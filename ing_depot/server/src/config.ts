@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
+import type { PriceUpdateMode } from '../../shared/api-types.js';
 
 /** IP des Home-Assistant-Ingress-Proxys (Supervisor-Netz). */
 export const INGRESS_PROXY_IP = '172.30.32.2';
@@ -22,6 +23,10 @@ export interface ServerConfig {
   exemptionCents: number;
   /** Token für die Supervisor-API; fehlt außerhalb von Home Assistant */
   supervisorToken: string | null;
+  /** Abruf der Online-Kurse */
+  priceUpdate: PriceUpdateMode;
+  /** Abstand der Abrufe im Modus `intraday` (Minuten) */
+  priceIntervalMinutes: number;
 }
 
 /** Vom Nutzer im Tab „Konfiguration“ gesetzte Add-on-Optionen (`/data/options.json`). */
@@ -29,7 +34,11 @@ export interface AddonOptions {
   inbox_folder?: string;
   publish_sensors?: boolean;
   exemption_order?: number;
+  price_update?: string;
+  price_interval?: number;
 }
+
+const PRICE_MODES: readonly PriceUpdateMode[] = ['off', 'daily', 'intraday'];
 
 export function readAddonOptions(dataDir: string): AddonOptions {
   try {
@@ -73,6 +82,8 @@ export function loadConfig(
   const inbox = (env['INBOX_DIR'] ?? addon.inbox_folder ?? '').trim();
   const exemption = Number(addon.exemption_order ?? 0);
   const supervisorToken = env['SUPERVISOR_TOKEN']?.trim() || null;
+  const priceMode = env['PRICE_UPDATE'] ?? addon.price_update;
+  const interval = Number(env['PRICE_INTERVAL'] ?? addon.price_interval ?? 15);
 
   return {
     port: Number(env['PORT'] ?? 8099),
@@ -90,5 +101,9 @@ export function loadConfig(
     publishSensors: supervisorToken !== null && addon.publish_sensors !== false,
     exemptionCents: Number.isFinite(exemption) && exemption > 0 ? Math.round(exemption * 100) : 0,
     supervisorToken,
+    priceUpdate: PRICE_MODES.includes(priceMode as PriceUpdateMode)
+      ? (priceMode as PriceUpdateMode)
+      : 'daily',
+    priceIntervalMinutes: Number.isInteger(interval) ? Math.min(120, Math.max(5, interval)) : 15,
   };
 }

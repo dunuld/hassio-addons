@@ -42,7 +42,15 @@ describe('Server-Start (main.ts)', () => {
     const target = join(tmp, 'data');
     child = spawn(process.execPath, [tsxCli, 'server/src/main.ts'], {
       cwd: projectRoot,
-      env: { ...process.env, ADDON_MODE: '', DATA_DIR: target, PORT: '0', HOST: '127.0.0.1' },
+      // Kein Online-Kursabruf im Test – sonst gingen echte Anfragen an Yahoo hinaus
+      env: {
+        ...process.env,
+        PRICE_UPDATE: 'off',
+        ADDON_MODE: '',
+        DATA_DIR: target,
+        PORT: '0',
+        HOST: '127.0.0.1',
+      },
     });
     const port = await waitForPort(child);
 

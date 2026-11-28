@@ -7,6 +7,8 @@ import { openDatabase } from './db/database.js';
 import { DepotService } from './depot.service.js';
 import { HomeAssistantClient, HomeAssistantSync } from './home-assistant.js';
 import { scanInbox } from './inbox.js';
+import { PriceUpdater } from './prices/price-updater.js';
+import { YahooClient } from './prices/yahoo.js';
 
 const INBOX_INTERVAL_MS = 60_000;
 const HA_SYNC_INTERVAL_MS = 15 * 60_000;
@@ -67,12 +69,20 @@ if (config.supervisorToken) {
   timers.push(setInterval(() => void sync.sync(), HA_SYNC_INTERVAL_MS));
 }
 
+// ---- Online-Kurse (Yahoo Finance) ----
+const prices = new PriceUpdater(depot, new YahooClient(), {
+  mode: config.priceUpdate,
+  intervalMinutes: config.priceIntervalMinutes,
+});
+prices.start();
+
 const app = createApp({
   staticDir: config.staticDir,
   allowedIps: config.allowedIps,
   version: config.version,
   depot,
   scanInbox: runInboxScan,
+  prices,
 });
 
 const server = app.listen(config.port, config.host, () => {
@@ -82,7 +92,8 @@ const server = app.listen(config.port, config.host, () => {
       `(Daten: ${config.dataDir}, Addon-Modus: ${config.addonMode ? 'ja' : 'nein'}, ` +
       `IP-Filter: ${config.allowedIps?.join(', ') ?? 'aus'}, ` +
       `Eingangsordner: ${config.inboxDir ?? 'aus'}, ` +
-      `HA-Sensoren: ${config.publishSensors ? 'an' : 'aus'})`,
+      `HA-Sensoren: ${config.publishSensors ? 'an' : 'aus'}, ` +
+      `Online-Kurse: ${config.priceUpdate})`,
   );
 });
 server.on('error', (error) => {
@@ -96,6 +107,7 @@ function shutdown(signal: string): void {
   shuttingDown = true;
   console.log(`${signal} empfangen, beende …`);
   timers.forEach((timer) => clearInterval(timer));
+  prices.stop();
   server.close(() => {
     db.close();
     process.exit(0);

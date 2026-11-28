@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import express, { type ErrorRequestHandler, type Express, type RequestHandler } from 'express';
 import type { ApiError, HealthResponse } from '../../shared/api-types.js';
 import type { DepotService } from './depot.service.js';
+import type { PriceUpdates } from './routes.js';
 import { HttpError } from './http-error.js';
 import { depotRouter } from './routes.js';
 
@@ -16,6 +17,8 @@ export interface AppOptions {
   depot?: DepotService;
   /** Wird nach einem Upload aufgerufen, z. B. um den Eingangsordner erneut zu prüfen. */
   scanInbox?: () => Promise<unknown>;
+  /** Abruf der Online-Kurse; fehlt er, ist der Abruf ausgeschaltet. */
+  prices?: PriceUpdates;
 }
 
 /** Entfernt das IPv4-mapped-Präfix (`::ffff:172.30.32.2` → `172.30.32.2`). */
@@ -70,7 +73,7 @@ export function createApp(options: AppOptions = {}): Express {
     res.json(body);
   });
 
-  if (options.depot) api.use(depotRouter(options.depot, options.scanInbox));
+  if (options.depot) api.use(depotRouter(options.depot, options.scanInbox, options.prices));
 
   api.use((_req, res) => {
     const body: ApiError = { error: 'Nicht gefunden', code: 'NOT_FOUND' };

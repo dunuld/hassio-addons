@@ -18,6 +18,14 @@
 - Realisierter Gewinn aus dem Veräußerungsgewinn der Verkaufsabrechnung
 - Parser an echten Dokumenten des ING Direkt-Depots ausgerichtet (Depotauszug, Sparplan, Verkauf,
   Ertragsgutschrift)
+- Online-Kurse von Yahoo Finance: Abruf einmal täglich nach Börsenschluss oder laufend während der
+  Handelszeit (Option `price_update`, Abstand über `price_interval`), dazu „Kurse jetzt
+  aktualisieren“ in der Übersicht
+- Kürzel werden per ISIN gefunden (Xetra bevorzugt); Kurse in Fremdwährung werden mit dem
+  Devisenkurs in EUR umgerechnet; je Wertpapier lassen sich ein eigenes Kürzel eintragen und der
+  Online-Abruf abschalten
+- Fehlende Schlusskurse zum 31.12. werden nachgeholt, damit der „Kursgewinn seit 01.01.“ auch ohne
+  Jahresdepotauszug stimmt
 
 ### Technik
 

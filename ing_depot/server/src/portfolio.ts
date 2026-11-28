@@ -17,6 +17,9 @@ export interface SecurityRow {
   isin: string;
   name: string;
   priceEntity: string | null;
+  onlinePrices?: boolean;
+  priceSymbol?: string | null;
+  resolvedSymbol?: string | null;
 }
 
 /** Bestand laut Depotauszug – dient zur Plausibilitätsprüfung. */
@@ -62,7 +65,8 @@ interface State {
 }
 
 const EPSILON = 1e-9;
-const SOURCE_RANK: Record<PriceSource, number> = { document: 0, ha: 1, manual: 2 };
+/** Bei mehreren Kursen desselben Tages gewinnt der höchste Rang. */
+const SOURCE_RANK: Record<PriceSource, number> = { document: 0, yahoo: 1, ha: 2, manual: 3 };
 
 const pct = (gain: number, base: number): number | null =>
   base > 0 ? Math.round((gain / base) * 10000) / 100 : null;
@@ -289,6 +293,9 @@ export function computeOverview(input: PortfolioInput): Overview {
       priceDate: price?.date ?? null,
       priceSource: price?.source ?? null,
       priceEntity: names.get(isin)?.priceEntity ?? null,
+      onlinePrices: names.get(isin)?.onlinePrices ?? true,
+      priceSymbol: names.get(isin)?.priceSymbol ?? null,
+      resolvedSymbol: names.get(isin)?.resolvedSymbol ?? null,
       valueCents,
       gainCents: valueCents - costCents,
       gainPct: pct(valueCents - costCents, costCents),
