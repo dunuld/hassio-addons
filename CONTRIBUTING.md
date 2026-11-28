@@ -17,6 +17,7 @@ README.md                    # Übersicht des Repositorys
 .github/scripts/             # Hilfsskripte der Workflows
 new_addon/                   # Add-on „Neues Add-on“ (Grundgerüst, gleicher Aufbau)
 time_tracker/                # Add-on „Zeiterfassung“ (gleicher Aufbau)
+ing_depot/                   # Add-on „ING Depot“ (gleicher Aufbau)
 budget_tracker/              # Add-on „Haushaltsbuch“
   config.yaml                # Add-on-Konfiguration (Version, Architekturen, Ingress)
   Dockerfile                 # Multi-Stage Build (node:24-alpine)
